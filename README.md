@@ -3,7 +3,7 @@ My masters degree project
 
 Project contains elements for Respberry Pi and "Server" PC
 Raspberry Pi:
-1. Modified library for adafruit SPI sensor 
+1. Modified library for adafruit SPI sensor (In different project)
 2. Code for I2C sensor
 3. Code for linear scanner
 4. Module for ethernet measurements sending
