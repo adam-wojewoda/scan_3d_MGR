@@ -14,4 +14,3 @@ PC/server:
 3. Code for creating 3d points cloud from IMU path and linear scanner data containing optimizer for modifying path
 4. Code for reworking cloud points into stl. (Might be part of optimizer)
 5. Gui working with database and stl's
-6. 
