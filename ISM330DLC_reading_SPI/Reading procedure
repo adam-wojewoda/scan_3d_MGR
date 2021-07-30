@@ -1,0 +1,18 @@
+We are reading with SPI, trying to get as many samples a sec as possible.
+1. Wait for call from server PC with info about measurement (OPC UA)
+2. Check if server is ready for the start of measurement (InfluxDb)
+3. Wait for start call (OPC UA)
+4. Initialize sensor and read WHO_AM_I registry (0Fh)
+	The registry should give us 0x01101011 as a response	
+5. Write config to sensor
+	- 02h - pulling up or down the pins (optional)
+	- 10h - accelerometer range
+		0b1010_11_00 -> 6.66 kHz, 8g, unfiltered
+  	- 11h - gyroscope range
+		0b1010_10_00 -> 6.66 kHz, 1000dps
+	- 12h - data update mode (optional)
+		0b01000100
+6. Send measuring flag (OPC UA)
+7a. Read data in loop as fast as You can (DOF Sensors)
+7b. Send packages with data to server (influxDb)
+7c. Wait for end measurement command (Server or hardware)
