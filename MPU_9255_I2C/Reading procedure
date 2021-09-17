@@ -1,49 +1,50 @@
+gyro  +/- 1000 dps
+accel +/- 8g
 
-
-Maksymalne próbkowanie 4 kHz
+max sampling 4 kHz
 R26 
-7-rezerwa
-6-0 - bez blokowania kolejki fifo
+7-re
+6-0 - don't block fifo 
 5-0 x
 4-0 x
-3-0 x - wyłączenie f_sync
+3-0 x - off f_sync (data sampled by internal clock)
 2-0 y
 1-0 y
-0-0 y - ustawienia filtra
+0-0 y - filter settings (I want raw data)
 
-
-ZADAĆ
-R27 ustawienia żyroskopu
+TO_SET
+R27 gyro settings
 7-0 x
 6-0 x
-5-0 x - selftest żyroskopu
+5-0 x - selftest gyro off
 4-1 y
-3-0 y ustawienia zakresu  00 = +250dps, 01= +500 dps, 10 = +1000 dps, 11 = +2000 dps
-2-0 rezerwa
+3-0 y gyro range  00 = +250dps, 01= +500 dps, 10 = +1000 dps, 11 = +2000 dps
+2-0 re
 1-0 z
-0-0 z aktywacja filtra 
-ZADAĆ
-R28 ustawienia akcelerometru
+0-0 z filter settings (I want raw data) 
+
+TO_SET
+R28 accel settings
 7-0 x
 6-0 x
-5-0 x selftest akcelerometru
+5-0 x selftest accel off
 4-1 y
-3-0 y ustawienia zakresu akcelerometru ±2g (00), ±4g (01), ±8g (10), ±16g (11)
-2-0 rezerwa
-1-0 rezerwa
-0-0 rezerwa
+3-0 y accel range ±2g (00), ±4g (01), ±8g (10), ±16g (11)
+2-0 re
+1-0 re
+0-0 re
 
-R29 ustawienia akcelerometru 2
-7-0 rezerwa
-6-0 rezerwa
-5-0 rezerwa
-4-0 rezerwa
-3-0 włączenie akcelerometru 
+R29 accel settings 2
+7-0 re
+6-0 re
+5-0 re
+4-0 re
+3-0 accel on 
 2-0 x
 1-0 x
-0-0 x ustawienia filtra
+0-0 x filter settings (I want raw data)
 
-R35 ustawienia kolejki fifo
+R35 fifo settings
 7-0 
 6-0
 5-0
@@ -51,56 +52,56 @@ R35 ustawienia kolejki fifo
 3-0
 2-0
 1-0
-0-0 nic nie wpisuję do fifo
-
-AKCELEROMETR
-R59 byte wysoki oś X
-R60 byte niski oś X
-
-R61 byte wysoki oś y
-R62 byte niski oś y
-
-R63 byte wysoki oś z
-R64 byte niski oś z
+0-0 write nothing to fifo
 
 
+ACCEL_DATA
+R59 byte H X
+R60 byte L X
 
-ŻYROSKOP
-R65 byte wysoki oś X
-R66 byte niski oś X
+R61 byte H y
+R62 byte L y
 
-R67 byte wysoki oś y
-R68 byte niski oś y
+R63 byte H z
+R64 byte L z
 
-R69 byte wysoki oś z
-R70 byte niski oś z
+
+GYRO_DATA
+R65 byte H X
+R66 byte L X
+
+R67 byte H y
+R68 byte L y
+
+R69 byte H z
+R70 byte L z
+
 
 GYRO_XOUT = Gyro_Sensitivity * X_angular_rate
 Gyro_Sensitivity = 131 LSB/(º/s)
 
-R105 Wake-on-Motion zerkąć czy są same zera
+R105 Wake-on-Motion check if it's zero
 
-raczej można zostawić, ale jeszcze jest to do sprawdzenia
 R107
-7-0 jakiś restart ustawień
-6-0 tryb uśpienia
-5-0 nie spać (chyba)
-4-0 standby na żyroskopie
-3-0 wyłącz zasilanie przetworników
-2-0 x korzystaj z wewnętrznego oscylatora
+7-0 some restart
+6-0 sleep_mode_1
+5-0 sleep_mode_2
+4-0 standby on gyro
+3-0 turn off converters power supply
+2-0 x use external oscillator (nope let's go internal)
 1-0 x
 0-0 x
 
 R108 
-7-0 rezerwa
-6-0 rezerwa
-5-0 włącz akc x
-4-0 włącz akc y
-3-0 włącz akc z
-2-0 włącz gyr x
-1-0 włącz gyr y
-0-0 włącz gyr z
+7-0 re
+6-0 re
+5-0 ON acc x
+4-0 ON acc y
+3-0 ON acc z
+2-0 ON gyr x
+1-0 ON gyr y
+0-0 ON gyr z
 
-R117 - who_am_i
+R117 - who_am_i 
 
 
