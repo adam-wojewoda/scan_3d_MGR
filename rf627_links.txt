@@ -1,0 +1,2 @@
+https://github.com/RIFTEK-LLC/RF62X-Core/blob/9816288ace9ec08148dc3598dcdecba05825876b/src/rf62X_sdk.c
+https://gitlab.com/riftek_llc/software/sdk/scanners/RF62X-SDK
