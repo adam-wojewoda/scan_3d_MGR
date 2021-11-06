@@ -1,3 +1,5 @@
+""" Container for SPI sensors. For now I only have one, so the whole file is named after it """
+
 import time
 import spidev
 import struct
@@ -8,6 +10,10 @@ import struct
 
 
 class My_SPI_sensor:
+    """ General SPI sensor communication class.
+     For now I only have one sensor on one physical channel, so there's no need for parametrization.
+     """
+
     def __init__(self):
         spi_ch = 0
 
@@ -16,6 +22,10 @@ class My_SPI_sensor:
         self.spi.max_speed_hz = 5000000
 
     def set_register(self, address, value):
+        """ Set value of single register
+         :parameter address - Starting address
+         :parameter value - Register input value interpreted as int, but I care only about bits
+         """
 
         # make sure we have the write command on address
         if address > 0b01111111:
@@ -28,6 +38,10 @@ class My_SPI_sensor:
         self.spi.xfer2(msg)
 
     def read_multi_registers(self, start_address, elem_num=1):
+        """ Read values from series of registers
+         :parameter start_address - first address to get data from
+         :parameter elem_num - number of registers to read
+         :returns list of raw register data"""
         # make sure we have the write command on address
         if start_address > 0b11111111:
             raise ValueError("Address too big")
@@ -44,6 +58,9 @@ class My_SPI_sensor:
         return reply[1:]
 
     def read_single_register(self, start_address):
+        """ Read value of single register
+         :parameter start_address - address of register to read
+         :returns single 8 bit integer value"""
         # make sure we have the write command on address
         if start_address > 0b11111111:
             raise ValueError("Address too big")
@@ -57,6 +74,8 @@ class My_SPI_sensor:
 
 
 class ISM_330_reader(My_SPI_sensor):
+    """ ISM_330 sensor class
+    The class takes care of communication and data recalculation """
     # change according to data range
     accel_multiplier = 8 / 32767 * 9.80665  # 8g
     gyro_multiplier = 1000 / 32768  # 1000 degrees per second
@@ -76,6 +95,8 @@ class ISM_330_reader(My_SPI_sensor):
         time.sleep(0.05)
 
     def get_values(self):
+        """Get gyroscope and accelerometer data
+         :returns list od gyroscope and accelerometer data [gyro_X,gyro_Y,gyro_Z, acc_X, acc_Y,acc_Z] deg/s, m/s^2 """
         out_raw = list(struct.unpack_from("<hhhhhh", bytearray(self.read_multi_registers(0x22, 12))))
         out_fin = [None] * 6
         for i in range(3):

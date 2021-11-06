@@ -1,3 +1,4 @@
+""" Container for I2C sensors. For now I only have one, so the whole file is named after it """
 import struct
 import smbus2
 import time
@@ -8,13 +9,19 @@ import time
 
 
 class My_I2C_sensor:
+    """ General I2C sensor communication class.
+         For now I only have one sensor on one physical channel, so there's no need for parametrization.
+         """
+
     def __init__(self):
         # initialize I2C bus, frequency is set by the system in boot/config.txt
         self.bus = smbus2.SMBus(1)
         self.address_dev = 0x68
 
     def set_register(self, address, value):
-
+        """ Set value of single register
+         :parameter address - Starting address
+         :parameter value - Register input value interpreted as int, but I care only about bits"""
         # make sure we have the write command on address
         if address > 0b01111111:
             raise ValueError("Address buffer overflow-address bigger than 128")
@@ -24,6 +31,10 @@ class My_I2C_sensor:
         self.bus.write_byte_data(self.address_dev, address, value)
 
     def read_multi_registers(self, start_address, elem_num=1):
+        """ Read values from series of registers
+         :parameter start_address - first address to get data from
+         :parameter elem_num - number of registers to read
+         :returns list of raw register data"""
         # make sure we have the write command on address
         if start_address > 0b01111111:
             raise ValueError("Address too big")
@@ -34,6 +45,9 @@ class My_I2C_sensor:
         return reply
 
     def read_single_register(self, start_address):
+        """ Read value of single register
+         :parameter start_address - address of register to read
+         :returns single 8 bit integer value"""
         # make sure we have the write command on address
         if start_address > 0b01111111:
             raise ValueError("Address too big")
@@ -42,6 +56,8 @@ class My_I2C_sensor:
 
 
 class MPU_9255_reader(My_I2C_sensor):
+    """ MPU_9255 sensor class
+    The class takes care of communication and data recalculation """
     # change according to data range
     accel_multiplier = 8 / 32767 * 9.80665  # 8g
     gyro_multiplier = 1000 / 32768  # 1000 degrees per second
@@ -68,6 +84,8 @@ class MPU_9255_reader(My_I2C_sensor):
         time.sleep(0.05)
 
     def get_values(self):
+        """Get gyroscope and accelerometer data
+        :returns list od gyroscope and accelerometer data [gyro_X,gyro_Y,gyro_Z, acc_X, acc_Y,acc_Z] deg/s, m/s^2 """
         out_raw = list(struct.unpack_from("<hhhhhh", bytearray(self.read_multi_registers(59, 12))))
         out_fin = [None] * 6
         for i in range(3):
