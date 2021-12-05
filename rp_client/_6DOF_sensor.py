@@ -35,8 +35,11 @@ if __name__ == '__main__':
         print('Great success!')
     except:
         print('SPI sensor failed!')
+    try:
         print('Trying I2C sensor')
         sens = _6DOF_sensor(sensor_type='MPU_9255')
         print('Getting data from I2C sensor:')
         print(sens.get_sensor_data())
         print('Great success!')
+    except:
+        print('I2C sensor failed')

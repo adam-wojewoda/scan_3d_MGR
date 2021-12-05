@@ -86,11 +86,11 @@ class MPU_9255_reader(My_I2C_sensor):
     def get_values(self):
         """Get gyroscope and accelerometer data
         :returns list od gyroscope and accelerometer data [gyro_X,gyro_Y,gyro_Z, acc_X, acc_Y,acc_Z] deg/s, m/s^2 """
-        out_raw = list(struct.unpack_from("<hhhhhh", bytearray(self.read_multi_registers(59, 12))))
+        out_raw = list(struct.unpack_from("<hhhhhhh", bytearray(self.read_multi_registers(58, 14))))
         out_fin = [None] * 6
         for i in range(3):
-            out_fin[i + 3] = out_raw[i + 3] * self.gyro_multiplier
-            out_fin[i] = out_raw[i] * self.accel_multiplier
+            out_fin[i] = out_raw[i + 4] * self.gyro_multiplier
+            out_fin[i + 3] = out_raw[i] * self.accel_multiplier
         return out_fin
 
 
@@ -101,16 +101,27 @@ if __name__ == '__main__':
     time_temp = time.time()
     time_start = time_temp
     time_2 = time.time()
-    while True:
+    try:
+        temp_1 = sensor_i2c.get_values()
+    except TimeoutError:
+            print('timeout: ' + str(time.time() - time_2))
+            print('total_run: ' + str(time.time() - time_start))
+            raise TimeoutError
+            
+    #while True:
+    for j in range(10000):
         try:
             temp = sensor_i2c.get_values()
+            for i in range(len(temp)):
+                temp_1[i] = temp_1[i] + temp[i]
             time_2 = time.time()
             count = count + 1
             if count > 1000:
-                count = 0
                 print(1000 / (time.time() - time_temp))
-                # print(temp)
+                print([x/(count+1) for x in temp_1])
+                count = 0
                 time_temp = time.time()
+                temp_1 = temp
         except TimeoutError:
             print('timeout: ' + str(time.time() - time_2))
             print('total_run: ' + str(time.time() - time_start))
