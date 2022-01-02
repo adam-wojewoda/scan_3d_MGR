@@ -6,12 +6,27 @@ import pandas as pd  # for influx sender class
 import threading  # for parallelism
 from time import sleep  # for basic pausing (reliving CPU)
 import datetime  # for getting measurement time in microseconds
-from queue import Queue  # for safe dataflow between threads
-from queue import Empty
+#from queue import Queue  # for safe dataflow between threads
+#from queue import Empty
 import Database_sender
-
+import multiprocessing as mp
 # Global constants
-packet_length = 100
+packet_length = 5000
+
+times={'get_loop':0.0,
+       'df_operations':0.0,
+       'sending':0.0}
+
+def send_process(list_in, db_host_address_in, names_in,db_in,sensor_in):
+    client = Database_sender.Database_sender(host=db_host_address_in)
+    df_temp = pd.DataFrame(list_in, columns=names_in)#.set_index(self.names[0])#, index=[self.names[0]])
+    df_temp.set_index(names_in[0], inplace=True)
+    df_temp.index = pd.to_datetime(df_temp.index,utc = True)#, unit='us')
+
+            
+    client.send_measurement(df=df_temp,#pd.DataFrame(list_of_lists, columns=self.names).set_index(self.names[0]),
+                                            db_name=db_in, measurement_name=sensor_in + '_raw')
+    pass
 
 
 class _6DOF_sender_thread(threading.Thread):
@@ -35,26 +50,28 @@ class _6DOF_sender_thread(threading.Thread):
         self.db_name = db_name_in
         # self.send_scanner = False
         # Create queue object
-        self.q = Queue()
+        self.q = mp.Queue()
+        self.deq = False # Dequeueing flag (Only one so I don't use locks)
         # Initialize dataframe column names
-        self.names = ['time_abs', 'time_rel', 'gyro_Z', 'gyro_Y', 'gyro_Z', 'acc_X', 'acc_Y', 'acc_Z']
+        self.names = ['time_abs', 'time_rel', 'gyro_X', 'gyro_Y', 'gyro_Z', 'acc_X', 'acc_Y', 'acc_Z']
         # Create DB client
         self.db_client = Database_sender.Database_sender(host=db_host_address)
+        self.db_address = db_host_address
         if not self.db_client.check_connection():
             raise RuntimeError('No dataframe connection')
         # Create collector thread
-        self.collector = threading.Thread(target=self.sensor_data_collector)
+        self.collector = mp.Process(target=self.sensor_data_collector)
         # Create sender thread
-        self.sender = threading.Thread(target=self.sensor_data_sender)
+        self.sender = mp.Process(target=self.sensor_data_sender)
 
     def run(self):
         while not self.events['stop main'].is_set():
-            if self.events['start collector'].is_set() and not self.collector.isAlive():
-                self.collector = threading.Thread(target=self.sensor_data_collector)
+            if self.events['start collector'].is_set() and not self.collector.is_alive():
+                self.collector = mp.Process(target=self.sensor_data_collector)
                 self.collector.start()  # Start collector thread
                 self.events['start collector'].clear()  # Clear flag for later use
-            if self.events['start sender'].is_set() and not self.sender.isAlive():
-                self.sender = threading.Thread(target=self.sensor_data_sender)
+            if self.events['start sender'].is_set() and not self.sender.is_alive():
+                self.sender = mp.Process(target=self.sensor_data_sender)
                 self.sender.start()  # Start sender thread
                 self.events['start sender'].clear()  # Clear flag for later use
             sleep(0.02)
@@ -62,21 +79,29 @@ class _6DOF_sender_thread(threading.Thread):
 
         # stop both sub-worker threads
         self.events['stop collector'].set()  # End data collection
-        while self.collector.isAlive():  # Wait for thread to stop
+        while self.collector.is_alive():  # Wait for thread to stop
             sleep(0.01)
         self.events['stop sender'].set()  # End data sending
-        while self.sender.isAlive():  # Wait for thread to stop
+        while self.sender.is_alive():  # Wait for thread to stop
             sleep(0.01)
 
     def sensor_data_collector(self):
         """Thread for collecting data from sensor"""
         print('Starting collector')
+        list_of_meas = []
         while not self.events['stop collector'].is_set():
-            time_now = datetime.datetime.now()
+            time_now = datetime.datetime.utcnow()
             #print(time_now)
             time_rel = time_now.timestamp() - self.start_time
             if self.send_data:
-                self.q.put([time_now, time_rel] + self.sensor.get_sensor_data())
+                list_of_meas.append([time_now, time_rel] + self.sensor.get_sensor_data())
+            if not self.deq and len(list_of_meas)>500:
+                self.q.put(list_of_meas)
+                list_of_meas = []
+        # send remining points
+        if len(list_of_meas)>0:
+                self.q.put(list_of_meas)
+                list_of_meas = []
         self.events['stop collector'].clear()  # Clear flag for later use
         print('Stopping collector')
 
@@ -90,32 +115,44 @@ class _6DOF_sender_thread(threading.Thread):
         if not self.db_client.check_database(self.db_name):
             raise RuntimeError('No such database')
 
-        def sender_proto(length):
-            print(length)
-            list_of_lists = []
+
+        def rest_sender(length):
+
+            self.deq = True
+            list_of_lists2= []
+         
             for i in range(length):
                 try:
-                    list_of_lists.append(self.q.get(block=False))
+                    list_of_lists2=list_of_lists2 + self.q.get(block=True)
                 except Empty:
-                    sleep(0.001)
-                    
-            #print(list_of_lists)
-            df_temp = pd.DataFrame(list_of_lists, columns=self.names)#.set_index(self.names[0])#, index=[self.names[0]])
-            df_temp[self.names[0]] = pd.DatetimeIndex(df_temp[self.names[0]])
-            #df_temp.set_index(self.names[0])
-            print(df_temp.set_index(self.names[0]))
-            
-            self.db_client.send_measurement(df=df_temp.set_index(self.names[0]),#pd.DataFrame(list_of_lists, columns=self.names).set_index(self.names[0]),
-                                            db_name=self.db_name, measurement_name=self.sensor.sensor_type + '_raw')
+                    sleep(0.01)
 
-        # main sender loop
-        while not self.events['stop sender'].is_set() or self.collector.isAlive():  # Run while data is collected
-            if self.q.qsize() > packet_length:
-                sender_proto(length=packet_length)
-            sleep(0.05)
-        print('sending remining queue data')
+            self.deq = False
+            p2 = mp.Process(target=send_process, args=(list_of_lists2, self.db_address, self.names,self.db_name,self.sensor.sensor_type))
+            p2.start()
+            p2.join()
+            
+        list_of_lists = []
+        p = mp.Process(target=send_process, args=(list_of_lists, self.db_address, self.names,self.db_name,self.sensor.sensor_type))
+        while not self.events['stop sender'].is_set() or self.collector.is_alive():  # Run while data is collected
+            if self.q.qsize() > 0:
+                try:
+                    self.deq = True
+                    list_of_lists=list_of_lists + self.q.get(block=True)
+                    self.deq = False
+                except Empty:
+                    sleep(0.01)
+                    
+                if len(list_of_lists)>packet_length and not p.is_alive() :
+                    p = mp.Process(target=send_process, args=(list_of_lists, self.db_address, self.names,self.db_name,self.sensor.sensor_type))
+                    p.start()
+                    list_of_lists = []
+            else:
+                sleep(0.05)
+        p.join()
+        print('Sending rest of queue data')
         if self.q.qsize()>0:
-            sender_proto(self.q.qsize())
+            rest_sender(self.q.qsize())
         self.events['stop sender'].clear()
         print('Stopping sender')
 
@@ -126,16 +163,16 @@ if __name__ == '__main__':
       2. create and connect to database
       3. send sensor data for a few seconds
       """
-    start_time = datetime.datetime.now().timestamp()
+    start_time = datetime.datetime.utcnow().timestamp()
     thread_events = {'stop collector': threading.Event(),
                      'stop sender': threading.Event(),
                      'stop main': threading.Event(),
                      'start collector': threading.Event(),
                      'start sender': threading.Event()}
     sensor = 'MPU_9255'
-    # sensor = 'ISM_330'
+    #sensor = 'ISM_330'
     db_name = 'scan_sensor_test'
-    db_ip_address = '192.168.10.15'
+    db_ip_address = '192.168.1.15'
     sensor_thread = _6DOF_sender_thread(start_time_in=start_time,
                                         event_list=thread_events,
                                         db_name_in=db_name,
@@ -157,12 +194,13 @@ if __name__ == '__main__':
     thread_events['start sender'].set()
     print('Calling start collector')
     thread_events['start collector'].set()
-    sleep(0.1)
+    sleep(60)
     print('Calling stop collector')
     thread_events['stop collector'].set()
-    sleep(1)
-    print('Calling start collector')
-    thread_events['start collector'].set()
-    sleep(0.1)
+    #sleep(1)
+    #print('Calling start collector')
+    #thread_events['start collector'].set()
+    #sleep(1)
     print('Calling stop main')
     thread_events['stop main'].set()
+    print(times)

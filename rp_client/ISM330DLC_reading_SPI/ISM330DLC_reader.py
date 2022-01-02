@@ -19,7 +19,7 @@ class My_SPI_sensor:
 
         # Enable SPI
         self.spi = spidev.SpiDev(0, spi_ch)
-        self.spi.max_speed_hz = 5000000
+        self.spi.max_speed_hz = 2500000
 
     def set_register(self, address, value):
         """ Set value of single register

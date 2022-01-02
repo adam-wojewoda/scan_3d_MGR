@@ -38,7 +38,7 @@ class Database_sender:
             return measurement_name in self.client.get_list_measurements()
 
     def send_measurement(self, df, db_name, measurement_name):
-        self.client.write_points(df, measurement_name, protocol='line', database=db_name, time_precision='u')
+        self.client.write_points(df, measurement_name, protocol='line', database=db_name, time_precision='u')#,batch_size=1000) #, time_precision='u'
 
     def get_whole_measurement(self, db_name, measurement_name):
         return self.client.query('select * from %(measurement)s' % {"measurement": measurement_name}, epoch='u',
@@ -49,8 +49,8 @@ class Database_sender:
 
 # Test calling
 if __name__ == '__main__':
-    print('Testing connection')
-    db_host_address='192.168.10.15'
+    print('Testing connection') 
+    db_host_address='192.168.1.15'
     print('Server IP: ' + db_host_address)
     db_client = Database_sender(host=db_host_address)
     if not db_client.check_connection():
