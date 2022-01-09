@@ -4,7 +4,7 @@ from _6DOF_sensor import _6DOF_sensor
 #import numpy as np
 import pandas as pd  # for influx sender class
 import threading  # for parallelism
-from time import sleep  # for basic pausing (reliving CPU)
+from time import sleep  # for basic pausing
 import datetime  # for getting measurement time in microseconds
 #from queue import Queue  # for safe dataflow between threads
 #from queue import Empty
@@ -87,6 +87,7 @@ class _6DOF_sender_thread(threading.Thread):
 
     def sensor_data_collector(self):
         """Thread for collecting data from sensor"""
+        self.events['running collector'].set()
         print('Starting collector')
         list_of_meas = []
         while not self.events['stop collector'].is_set():
@@ -104,6 +105,8 @@ class _6DOF_sender_thread(threading.Thread):
                 list_of_meas = []
         self.events['stop collector'].clear()  # Clear flag for later use
         print('Stopping collector')
+        sleep(0.02)
+        self.events['running collector'].clear()
 
     def sensor_data_sender(self):
         """Thread for sending data to server database"""
@@ -134,7 +137,7 @@ class _6DOF_sender_thread(threading.Thread):
             
         list_of_lists = []
         p = mp.Process(target=send_process, args=(list_of_lists, self.db_address, self.names,self.db_name,self.sensor.sensor_type))
-        while not self.events['stop sender'].is_set() or self.collector.is_alive():  # Run while data is collected
+        while not self.events['stop sender'].is_set() or self.events['running collector'].is_set():  # Run while data is collected
             if self.q.qsize() > 0:
                 try:
                     self.deq = True
@@ -164,15 +167,16 @@ if __name__ == '__main__':
       3. send sensor data for a few seconds
       """
     start_time = datetime.datetime.utcnow().timestamp()
-    thread_events = {'stop collector': threading.Event(),
-                     'stop sender': threading.Event(),
-                     'stop main': threading.Event(),
-                     'start collector': threading.Event(),
-                     'start sender': threading.Event()}
+    thread_events = {'stop collector': mp.Event(),
+                     'stop sender': mp.Event(),
+                     'stop main': mp.Event(),
+                     'start collector': mp.Event(),
+                     'start sender': mp.Event(),
+                     'running collector': mp.Event()}
     sensor = 'MPU_9255'
     #sensor = 'ISM_330'
     db_name = 'scan_sensor_test'
-    db_ip_address = '192.168.1.15'
+    db_ip_address = '192.168.1.47'
     sensor_thread = _6DOF_sender_thread(start_time_in=start_time,
                                         event_list=thread_events,
                                         db_name_in=db_name,
@@ -194,7 +198,7 @@ if __name__ == '__main__':
     thread_events['start sender'].set()
     print('Calling start collector')
     thread_events['start collector'].set()
-    sleep(60)
+    sleep(5)
     print('Calling stop collector')
     thread_events['stop collector'].set()
     #sleep(1)
