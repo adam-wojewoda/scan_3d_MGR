@@ -1,5 +1,6 @@
-from LASER_scanner import LASER_scanner # laser scanner library 
-import sys # for importing of DB 
+from LASER_scanner import LASER_scanner  # laser scanner library
+import sys  # for importing of DB
+
 sys.path.append("../../rp_client")
 import pandas as pd  # for influx sender class
 import threading  # for parallelism
@@ -7,26 +8,30 @@ from time import sleep  # for basic pausing
 import datetime  # for measurement timing (in microseconds)
 import Database_sender
 import multiprocessing as mp
+
 packet_length_scan = 25
 
-def send_profile_process(list_in, db_host_address_in,db_in):
-    list_of_points=[]
+
+def send_profile_process(list_in, db_host_address_in, db_in):
+    list_of_points = []
     # list_in format {'time_now':time_now,'time_rel':time_rel,'line':self.scanner.get_line()}
     for line in list_in:
-        time_now=line['time_now']
-        time_rel=line['time_rel']
+        time_now = line['time_now']
+        time_rel = line['time_rel']
         for i in range(len(line['line'])):
-            if line['line'][i]['z']!=0.0:
-                list_of_points.append([time_now-datetime.timedelta(microseconds=i),time_rel,line['line'][i]['x'],line['line'][i]['z']])
+            if line['line'][i]['z'] != 0.0:
+                list_of_points.append([time_now - datetime.timedelta(microseconds=i), time_rel, line['line'][i]['x'],
+                                       line['line'][i]['z']])
                 # Microseconds added in order for server to keep all the points (datetime has microsecond resolution)
                 # Without that distinction only the last point would be kept 
                 # On PC side only the relative time will be used, so we have no problem here untill we read 
                 # more than 10^6 points per second. Now we have 200k pts/s at max, so we're safe.
     client = Database_sender.Database_sender(host=db_host_address_in)
-    df_temp = pd.DataFrame(list_of_points, columns=['time_abs', 'time_rel', 'point_X', 'points_Z'])#.set_index(self.names[0]xy)#, index=[self.names[0]])
+    df_temp = pd.DataFrame(list_of_points, columns=['time_abs', 'time_rel', 'point_X',
+                                                    'points_Z'])  # .set_index(self.names[0]xy)#, index=[self.names[0]])
     df_temp.set_index('time_abs', inplace=True)
-    df_temp.index = pd.to_datetime(df_temp.index,utc = True)#, unit='us')
-    client.send_measurement(df=df_temp,db_name=db_in, measurement_name='scanner_raw')
+    df_temp.index = pd.to_datetime(df_temp.index, utc=True)  # , unit='us')
+    client.send_measurement(df=df_temp, db_name=db_in, measurement_name='scanner_raw')
 
 
 class LASER_scanner_thread(threading.Thread):
@@ -48,7 +53,7 @@ class LASER_scanner_thread(threading.Thread):
         self.db_name = db_name_in
         # Create queue object
         self.q = mp.Queue()
-        self.deq = False # Dequeueing flag (Only one so I don't use locks)
+        self.deq = False  # Dequeueing flag (Only one so I don't use locks)
         # Create DB client
         self.db_client = Database_sender.Database_sender(host=db_host_address)
         self.db_address = db_host_address
@@ -58,18 +63,18 @@ class LASER_scanner_thread(threading.Thread):
         self.collector = mp.Process(target=self.scanner_data_collector)
         # Create sender thread
         self.sender = mp.Process(target=self.scanner_data_sender)
-    
-    def __del__(self): # As I'm using a .so lib for the scanner I want to cleanup properly
+
+    def __del__(self):  # As I'm using a .so lib for the scanner I want to cleanup properly
         print('Joining scanner collector process')
         self.collector.join()
         print('Joining scanner sender process')
         self.sender.join()
         print('Deleting the scanner class')
         del self.scanner
-    
+
     def run(self):
         while not self.events['stop main'].is_set():
-            if self.events['start collector'].is_set() and not self.collector.is_alive(): 
+            if self.events['start collector'].is_set() and not self.collector.is_alive():
                 self.collector = mp.Process(target=self.scanner_data_collector)
                 self.collector.start()  # Start collector thread
                 self.events['start collector'].clear()  # Clear flag for later use
@@ -84,14 +89,14 @@ class LASER_scanner_thread(threading.Thread):
         sleep(0.05)
         print('run func waiting for collector to end')
         self.collector.join(timeout=2)
-        if self.collector.is_alive(): # There's a bug terminating the process, but
+        if self.collector.is_alive():  # There's a bug terminating the process, but
             if self.events['running collector'].is_set():
                 print('Collector still runs active, something went wrong')
             else:
                 print('Collector ended its work properly but the process somehow hangs')
             print('collector forced termination was needed')
             self.collector.terminate()
-        
+
         self.events['stop sender'].set()  # End data collection
         sleep(0.05)
         print('run func waiting for sender to end')
@@ -109,16 +114,16 @@ class LASER_scanner_thread(threading.Thread):
             time_now = datetime.datetime.utcnow()
             time_rel = time_now.timestamp() - self.start_time
             if self.send_data:
-                list_of_profiles.append({'time_now':time_now,'time_rel':time_rel,'line':self.scanner.get_line()})
-            
-            if not self.deq and len(list_of_profiles)>5:
+                list_of_profiles.append({'time_now': time_now, 'time_rel': time_rel, 'line': self.scanner.get_line()})
+
+            if not self.deq and len(list_of_profiles) > 5:
                 self.q.put(list_of_profiles)
                 list_of_profiles = []
-        print('Cought stop collector event')
+        print('Caught stop collector event')
         # send remining points
-        if len(list_of_profiles)>1: # give up on one line to make sure data is list of, not one dict
-                self.q.put(list_of_profiles)
-                list_of_profiles = []
+        if len(list_of_profiles) > 1:  # give up on one line to make sure data is list of, not one dict
+            self.q.put(list_of_profiles)
+            list_of_profiles = []
         self.events['stop collector'].clear()  # Clear flag for later use
         print('Stopping collector')
         self.events['running collector'].clear()
@@ -136,37 +141,38 @@ class LASER_scanner_thread(threading.Thread):
         # *******************************************************
         def rest_sender(length):
             self.deq = True
-            list_of_lists_2= []
-         
+            list_of_lists_2 = []
+
             for i in range(length):
                 try:
-                    list_of_lists_2=list_of_lists_2 + self.q.get(block=True)
+                    list_of_lists_2 = list_of_lists_2 + self.q.get(block=True)
                 except Empty:
                     sleep(0.01)
 
             self.deq = False
-            p2 = mp.Process(target=send_profile_process, args=(list_of_lists_2, self.db_address,self.db_name))
+            p2 = mp.Process(target=send_profile_process, args=(list_of_lists_2, self.db_address, self.db_name))
             p2.start()
             print('Waiting for rest sender subprocess to end')
             p2.join()
-            
+
         # *******************************************************
-            
+
         list_of_lists = []
-        list_of_processes=[]
-        #p = mp.Process(target=send_profile_process, args=(list_of_lists, self.db_address,self.db_name))
-        while not self.events['stop sender'].is_set() or self.events['running collector'].is_set():  # Run while data is collected
+        list_of_processes = []
+        p = mp.Process(target=send_profile_process, args=(list_of_lists, self.db_address, self.db_name))
+        while not self.events['stop sender'].is_set() or self.events[
+                'running collector'].is_set():  # Run while data is collected
             if self.q.qsize() > 0:
                 try:
                     self.deq = True
-                    list_of_lists=list_of_lists + self.q.get(block=True)
+                    list_of_lists = list_of_lists + self.q.get(block=True)
                     self.deq = False
                 except Empty:
                     self.deq = False
                     sleep(0.01)
-                    
-                if len(list_of_lists)>packet_length_scan and not p.is_alive() :
-                    p = mp.Process(target=send_profile_process, args=(list_of_lists, self.db_address,self.db_name))
+
+                if len(list_of_lists) > packet_length_scan and not p.is_alive():
+                    p = mp.Process(target=send_profile_process, args=(list_of_lists, self.db_address, self.db_name))
                     p.start()
                     list_of_processes.append(p)
                     list_of_lists = []
@@ -177,7 +183,7 @@ class LASER_scanner_thread(threading.Thread):
         for p_t in list_of_processes:
             p_t.join()
         print('Sending rest of queue data')
-        if self.q.qsize()>0:
+        if self.q.qsize() > 0:
             rest_sender(self.q.qsize())
         self.events['stop sender'].clear()
         print('Stopping sender')
@@ -191,7 +197,7 @@ if __name__ == '__main__':
       """
     start_time = datetime.datetime.utcnow().timestamp()
     print(datetime.datetime.utcnow())
-    
+
     thread_events = {'stop collector': mp.Event(),
                      'stop sender': mp.Event(),
                      'stop main': mp.Event(),
@@ -199,14 +205,14 @@ if __name__ == '__main__':
                      'start sender': mp.Event(),
                      'running collector': mp.Event()}
     scanner_ip = '192.168.1.30'
-    #sensor = 'ISM_330'
+    # sensor = 'ISM_330'
     db_name = 'scan_sensor_test'
     db_ip_address = '192.168.1.47'
     scanner_thread = LASER_scanner_thread(start_time_in=start_time,
-                                        event_list=thread_events,
-                                        db_name_in=db_name,
-                                        db_host_address=db_ip_address,
-                                        scanner_ip_in=scanner_ip)
+                                          event_list=thread_events,
+                                          db_name_in=db_name,
+                                          db_host_address=db_ip_address,
+                                          scanner_ip_in=scanner_ip)
 
     print('Testing connection')
     print('Server IP: ' + db_ip_address)
@@ -224,11 +230,11 @@ if __name__ == '__main__':
     print('Calling start collector')
     thread_events['start collector'].set()
     sleep(5)
-    #print('Calling stop collector')
-    #thread_events['stop collector'].set()
-    #sleep(1)
-    #print('Calling start collector')
-    #thread_events['start collector'].set()
-    #sleep(1)
+    # print('Calling stop collector')
+    # thread_events['stop collector'].set()
+    # sleep(1)
+    # print('Calling start collector')
+    # thread_events['start collector'].set()
+    # sleep(1)
     print('Calling stop main')
     thread_events['stop main'].set()
