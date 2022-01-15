@@ -1,32 +1,73 @@
 """ Class takes the sensor, runs a loop taking input to the buffer till it gets a set number of points.
  After that the buffer if flushed into new process """
 from _6DOF_sensor import _6DOF_sensor
-#import numpy as np
+# import numpy as np
 import pandas as pd  # for influx sender class
 import threading  # for parallelism
 from time import sleep  # for basic pausing
 import datetime  # for getting measurement time in microseconds
-#from queue import Queue  # for safe dataflow between threads
-#from queue import Empty
+# from queue import Queue  # for safe dataflow between threads
+# from queue import Empty
 import Database_sender
 import multiprocessing as mp
+from math import sqrt
 # Global constants
 packet_length = 5000
 
-times={'get_loop':0.0,
-       'df_operations':0.0,
-       'sending':0.0}
 
-def send_process(list_in, db_host_address_in, names_in,db_in,sensor_in):
+def send_process(list_in, db_host_address_in, names_in, db_in, sensor_in):
     client = Database_sender.Database_sender(host=db_host_address_in)
-    df_temp = pd.DataFrame(list_in, columns=names_in)#.set_index(self.names[0])#, index=[self.names[0]])
+    df_temp = pd.DataFrame(list_in, columns=names_in)  # .set_index(self.names[0])#, index=[self.names[0]])
     df_temp.set_index(names_in[0], inplace=True)
-    df_temp.index = pd.to_datetime(df_temp.index,utc = True)#, unit='us')
+    df_temp.index = pd.to_datetime(df_temp.index, utc=True)  # , unit='us')
 
-            
-    client.send_measurement(df=df_temp,#pd.DataFrame(list_of_lists, columns=self.names).set_index(self.names[0]),
-                                            db_name=db_in, measurement_name=sensor_in + '_raw')
+    client.send_measurement(df=df_temp,  # pd.DataFrame(list_of_lists, columns=self.names).set_index(self.names[0]),
+                            db_name=db_in, measurement_name=sensor_in + '_raw')
     pass
+
+
+class Movement_sensing:
+    def __init__(self):
+        self.sensor_not_moving = False  # <-------------- I have to provide an algorithm to determine that state
+        self.f_gain = 0.98  # 1 - averaging filter gain y_k=y_k-1*f_gain + x_k*(1-f_gain) NEVER OVERWRITE
+        self.f_gain_2 = 1-self.f_gain
+        self.y_k = 0
+        self.time_hysteresis_lay = 2000 * 1000  # us - 2 seconds without move to call stop flag
+        self.timer_lay = datetime.datetime.utcnow().timestamp()  # us
+        self.time_hysteresis_move = 20 * 1000  # us - 10 ms of movement to call start flag
+        self.timer_move = datetime.datetime.utcnow().timestamp() # us
+        self.g_hysteresis_width = 0.05  # m/s^2  - width of hysteresis NEVER OVERWRITE
+        self.g_hysteresis_set_point = 9.81  # m/s^2  - set-point NEVER OVERWRITE
+        self.high_border = self.g_hysteresis_set_point + self.g_hysteresis_width
+        self.low_border = self.g_hysteresis_set_point - self.g_hysteresis_width
+
+    def point(self, g_tot_in):
+        # calculate g_tot
+        g_tot = sqrt(g_tot_in[0]**2+g_tot_in[1]**2+g_tot_in[2]**2)
+        # calculate filer_state
+        self.y_k = self.y_k*self.f_gain + g_tot*self.f_gain_2
+        time_now = datetime.datetime.utcnow().timestamp()
+        # check movement conditions
+        if self.y_k > self.high_border or self.y_k < self.low_border:
+            # movement sensing
+
+            # check movement timer
+            if self.timer_move+self.time_hysteresis_move < time_now:
+                self.sensor_not_moving = False
+
+            # zero laying timer
+            self.timer_lay = time_now
+        else:
+            # no movement sensing
+
+            # check laying timer
+            if self.timer_lay + self.time_hysteresis_lay < time_now:
+                self.sensor_not_moving = True
+
+            # zero move timer
+            self.timer_move = time_now
+
+        return self.sensor_not_moving
 
 
 class _6DOF_sender_thread(threading.Thread):
@@ -51,7 +92,7 @@ class _6DOF_sender_thread(threading.Thread):
         # self.send_scanner = False
         # Create queue object
         self.q = mp.Queue()
-        self.deq = False # Dequeueing flag (Only one so I don't use locks)
+        self.deq = False  # Dequeueing flag (Only one so I don't use locks)
         # Initialize dataframe column names
         self.names = ['time_abs', 'time_rel', 'gyro_X', 'gyro_Y', 'gyro_Z', 'acc_X', 'acc_Y', 'acc_Z']
         # Create DB client
@@ -63,6 +104,8 @@ class _6DOF_sender_thread(threading.Thread):
         self.collector = mp.Process(target=self.sensor_data_collector)
         # Create sender thread
         self.sender = mp.Process(target=self.sensor_data_sender)
+        self.movement_sensor = Movement_sensing()
+        self.scanner_laying = False
 
     def run(self):
         while not self.events['stop main'].is_set():
@@ -92,17 +135,22 @@ class _6DOF_sender_thread(threading.Thread):
         list_of_meas = []
         while not self.events['stop collector'].is_set():
             time_now = datetime.datetime.utcnow()
-            #print(time_now)
+            # print(time_now)
             time_rel = time_now.timestamp() - self.start_time
+            # get sensor output
+            sens_out = self.sensor.get_sensor_data()
+            # determine whether if the scanner is moving
+            self.scanner_laying = self.movement_sensor.point(sens_out)
             if self.send_data:
-                list_of_meas.append([time_now, time_rel] + self.sensor.get_sensor_data())
-            if not self.deq and len(list_of_meas)>500:
+                list_of_meas.append([time_now, time_rel] + sens_out)
+
+            if not self.deq and len(list_of_meas) > 500:
                 self.q.put(list_of_meas)
                 list_of_meas = []
-        # send remining points
-        if len(list_of_meas)>0:
-                self.q.put(list_of_meas)
-                list_of_meas = []
+        # send remaining points
+        if len(list_of_meas) > 0:
+            self.q.put(list_of_meas)
+            list_of_meas = []
         self.events['stop collector'].clear()  # Clear flag for later use
         print('Stopping collector')
         sleep(0.02)
@@ -118,43 +166,47 @@ class _6DOF_sender_thread(threading.Thread):
         if not self.db_client.check_database(self.db_name):
             raise RuntimeError('No such database')
 
-
         def rest_sender(length):
 
             self.deq = True
-            list_of_lists2= []
-         
+            list_of_lists2 = []
+
             for i in range(length):
                 try:
-                    list_of_lists2=list_of_lists2 + self.q.get(block=True)
+                    list_of_lists2 = list_of_lists2 + self.q.get(block=True)
                 except Empty:
                     sleep(0.01)
 
             self.deq = False
-            p2 = mp.Process(target=send_process, args=(list_of_lists2, self.db_address, self.names,self.db_name,self.sensor.sensor_type))
+            p2 = mp.Process(target=send_process,
+                            args=(list_of_lists2, self.db_address, self.names, self.db_name, self.sensor.sensor_type))
             p2.start()
             p2.join()
-            
+
         list_of_lists = []
-        p = mp.Process(target=send_process, args=(list_of_lists, self.db_address, self.names,self.db_name,self.sensor.sensor_type))
-        while not self.events['stop sender'].is_set() or self.events['running collector'].is_set():  # Run while data is collected
+        p = mp.Process(target=send_process,
+                       args=(list_of_lists, self.db_address, self.names, self.db_name, self.sensor.sensor_type))
+        while not self.events['stop sender'].is_set() or self.events[
+            'running collector'].is_set():  # Run while data is collected
+
             if self.q.qsize() > 0:
                 try:
                     self.deq = True
-                    list_of_lists=list_of_lists + self.q.get(block=True)
+                    list_of_lists = list_of_lists + self.q.get(block=True)
                     self.deq = False
                 except Empty:
                     sleep(0.01)
-                    
-                if len(list_of_lists)>packet_length and not p.is_alive() :
-                    p = mp.Process(target=send_process, args=(list_of_lists, self.db_address, self.names,self.db_name,self.sensor.sensor_type))
+
+                if len(list_of_lists) > packet_length and not p.is_alive():
+                    p = mp.Process(target=send_process, args=(
+                        list_of_lists, self.db_address, self.names, self.db_name, self.sensor.sensor_type))
                     p.start()
                     list_of_lists = []
             else:
                 sleep(0.05)
         p.join()
         print('Sending rest of queue data')
-        if self.q.qsize()>0:
+        if self.q.qsize() > 0:
             rest_sender(self.q.qsize())
         self.events['stop sender'].clear()
         print('Stopping sender')
@@ -174,7 +226,7 @@ if __name__ == '__main__':
                      'start sender': mp.Event(),
                      'running collector': mp.Event()}
     sensor = 'MPU_9255'
-    #sensor = 'ISM_330'
+    # sensor = 'ISM_330'
     db_name = 'scan_sensor_test'
     db_ip_address = '192.168.1.47'
     sensor_thread = _6DOF_sender_thread(start_time_in=start_time,
@@ -201,10 +253,9 @@ if __name__ == '__main__':
     sleep(5)
     print('Calling stop collector')
     thread_events['stop collector'].set()
-    #sleep(1)
-    #print('Calling start collector')
-    #thread_events['start collector'].set()
-    #sleep(1)
+    # sleep(1)
+    # print('Calling start collector')
+    # thread_events['start collector'].set()
+    # sleep(1)
     print('Calling stop main')
     thread_events['stop main'].set()
-    print(times)
