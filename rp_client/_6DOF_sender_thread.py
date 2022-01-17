@@ -29,22 +29,23 @@ def send_process(list_in, db_host_address_in, names_in, db_in, sensor_in):
 class Movement_sensing:
     def __init__(self):
         self.sensor_not_moving = False  # <-------------- I have to provide an algorithm to determine that state
-        self.f_gain = 0.98  # 1 - averaging filter gain y_k=y_k-1*f_gain + x_k*(1-f_gain) NEVER OVERWRITE
+        self.f_gain = 0.97  # 1 - averaging filter gain y_k=y_k-1*f_gain + x_k*(1-f_gain) NEVER OVERWRITE
         self.f_gain_2 = 1-self.f_gain
         self.y_k = 0
-        self.time_hysteresis_lay = 2000 * 1000  # us - 2 seconds without move to call stop flag
+        self.time_hysteresis_lay = 3  # ms - 2 seconds without move to call stop flag
         self.timer_lay = datetime.datetime.utcnow().timestamp()  # us
-        self.time_hysteresis_move = 20 * 1000  # us - 10 ms of movement to call start flag
+        self.time_hysteresis_move = 10 / 1000  # s - 10 ms of movement to call start flag
         self.timer_move = datetime.datetime.utcnow().timestamp() # us
-        self.g_hysteresis_width = 0.05  # m/s^2  - width of hysteresis NEVER OVERWRITE
+        self.g_hysteresis_width = 0.17  # m/s^2  - width of hysteresis NEVER OVERWRITE
         self.g_hysteresis_set_point = 9.81  # m/s^2  - set-point NEVER OVERWRITE
         self.high_border = self.g_hysteresis_set_point + self.g_hysteresis_width
         self.low_border = self.g_hysteresis_set_point - self.g_hysteresis_width
+        print('high_border :',self.high_border)
+        print('low_border :',self.low_border)
 
     def point(self, g_tot_in):
         # calculate g_tot
-        g_tot = sqrt(g_tot_in[0]**2+g_tot_in[1]**2+g_tot_in[2]**2)
-        # calculate filer_state
+        g_tot = sqrt(g_tot_in[3]**2+g_tot_in[4]**2+g_tot_in[5]**2)
         self.y_k = self.y_k*self.f_gain + g_tot*self.f_gain_2
         time_now = datetime.datetime.utcnow().timestamp()
         # check movement conditions
@@ -53,6 +54,9 @@ class Movement_sensing:
 
             # check movement timer
             if self.timer_move+self.time_hysteresis_move < time_now:
+                #print(self.y_k)
+                #if self.sensor_not_moving:
+                #    print('found movement')
                 self.sensor_not_moving = False
 
             # zero laying timer
@@ -62,11 +66,13 @@ class Movement_sensing:
 
             # check laying timer
             if self.timer_lay + self.time_hysteresis_lay < time_now:
+                #if not self.sensor_not_moving:
+                #    print('lost movement')
                 self.sensor_not_moving = True
 
             # zero move timer
             self.timer_move = time_now
-
+        
         return self.sensor_not_moving
 
 
@@ -225,8 +231,8 @@ if __name__ == '__main__':
                      'start collector': mp.Event(),
                      'start sender': mp.Event(),
                      'running collector': mp.Event()}
-    sensor = 'MPU_9255'
-    # sensor = 'ISM_330'
+    #sensor = 'MPU_9255'
+    sensor = 'ISM_330'
     db_name = 'scan_sensor_test'
     db_ip_address = '192.168.1.47'
     sensor_thread = _6DOF_sender_thread(start_time_in=start_time,
@@ -250,7 +256,8 @@ if __name__ == '__main__':
     thread_events['start sender'].set()
     print('Calling start collector')
     thread_events['start collector'].set()
-    sleep(5)
+    for i in range(2):
+        sleep(5)
     print('Calling stop collector')
     thread_events['stop collector'].set()
     # sleep(1)
