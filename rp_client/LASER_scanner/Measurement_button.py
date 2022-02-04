@@ -18,8 +18,9 @@ if __name__ == '__main__':
     """Test code:
       1. get the state of switch a few times
       """
-    pin = Measurement_button(20)
-    for i in range(10):
+    from time import sleep
+    pin = Measurement_button(11)
+    for i in range(100):
         print(pin.get_state())
-
+        sleep(1)
     del pin
