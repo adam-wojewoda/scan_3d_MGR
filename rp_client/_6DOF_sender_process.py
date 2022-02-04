@@ -174,7 +174,7 @@ class _6DOF_sender_process(mp.Process):
             if self.events['send data'].is_set():
                 list_of_meas.append([time_now, time_rel] + sens_out)
 
-            if not self.internal_events['dequeueing'].is_set() and len(list_of_meas) > 500:
+            if not self.internal_events['dequeueing'].is_set() and len(list_of_meas) > 10:
                 #print('enqueing_data')
                 self.q.put(list_of_meas)
                 list_of_meas = []
@@ -222,10 +222,12 @@ class _6DOF_sender_process(mp.Process):
         while not self.events['stop sender'].is_set() or self.events[
             'running collector'].is_set():  # Run while data is collected
             #print('sender_loop_call')
-            if self.q.qsize() > 0:
+            elements = self.q.qsize()
+            if elements > 20:
                 try:
-                    self.internal_events['dequeueing'].set()
-                    list_of_lists = list_of_lists + self.q.get(block=True)
+					self.internal_events['dequeueing'].set()
+					for i in range(elements):
+						list_of_lists = list_of_lists + self.q.get(block=True)
                     self.internal_events['dequeueing'].clear()
                 except Empty:
                     sleep(0.01)

@@ -39,6 +39,7 @@ class ProcessOrchestrator(mp.Process):
         """Create all the threads, prepare for some work"""
         mp.Process.__init__(self)
         self.trigger = Measurement_button.Measurement_button(11)
+        self.trigger_state = False
         self.main_events = events_in
         self.sensor_event_lists = [get_sensor_events(),
                                    get_sensor_events()]
@@ -222,14 +223,16 @@ class ProcessOrchestrator(mp.Process):
         # start imu data acquisition
         while not self.main_events['end'].is_set():
             #print('end_check')
-            trigger_state = self.trigger.get_state()
-            print(trigger_state)
-            if trigger_state:
-                self.laser_event_list['send data'].set()
-                print('MAIN: Scanning started!')
-            else:
-                self.laser_event_list['send data'].clear()
-                print('MAIN: Scanning paused!')
+            trigger_state_temp = self.trigger.get_state()
+            if self.trigger_state!=trigger_state_temp:
+                #print(trigger_state)
+                if self.trigger_state:
+                    self.laser_event_list['send data'].set()
+                    print('MAIN: Scanning started!')
+                else:
+                    self.laser_event_list['send data'].clear()
+                    print('MAIN: Scanning paused!')
+            self.trigger_state = trigger_state_temp
             sleep(0.05)
 
         #def end_processes(self):

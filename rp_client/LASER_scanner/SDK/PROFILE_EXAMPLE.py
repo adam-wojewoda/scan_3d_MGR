@@ -46,44 +46,50 @@ if __name__ == '__main__':
 
         # Get profile from scanner's data stream by Service Protocol.
         zero_points=True
-        realtime=True
+        realtime=False
         count=0
-        profile = get_profile2D(scanner,zero_points,realtime,kSERVICE)
-        if (is_connected and profile is not None):
-            profile_data_type=profile['header']['data_type']
-            print("Profile information: ")
-            if profile_data_type == PROFILE_DATA_TYPES.PIXELS:
-                print("* DataType\t: PIXELS")
-                print("* Count\t: ", profile['pixels_count'])
-            elif profile_data_type == PROFILE_DATA_TYPES.PIXELS_INTRP:
-                print("* DataType\t: PIXELS_INTRP")
-                print("* Count\t: ", profile['pixels_count'])
-            elif profile_data_type == PROFILE_DATA_TYPES.PROFILE:
-                print("* DataType\t: PROFILE")
-                print("* Count\t: ", profile['points_count'])
-            elif profile_data_type == PROFILE_DATA_TYPES.PROFILE_INTRP:
-                print("* DataType\t: PROFILE_INTRP")
-                print("* Count\t: ", profile['points_count'])
+        
+        while count<100000:
+        
+            profile = get_profile2D(scanner,zero_points,realtime,kSERVICE)
+            count = count+1
+            print(count/100)
+        # if (is_connected and profile is not None):
+            # 
+            # profile_data_type=profile['header']['data_type']
+            # print("Profile information: ")
+            # if profile_data_type == PROFILE_DATA_TYPES.PIXELS:
+                # print("* DataType\t: PIXELS")
+                # print("* Count\t: ", profile['pixels_count'])
+            # elif profile_data_type == PROFILE_DATA_TYPES.PIXELS_INTRP:
+                # print("* DataType\t: PIXELS_INTRP")
+                # print("* Count\t: ", profile['pixels_count'])
+            # elif profile_data_type == PROFILE_DATA_TYPES.PROFILE:
+                # print("* DataType\t: PROFILE")
+                # print("* Count\t: ", profile['points_count'])
+            # elif profile_data_type == PROFILE_DATA_TYPES.PROFILE_INTRP:
+                # print("* DataType\t: PROFILE_INTRP")
+                # print("* Count\t: ", profile['points_count'])
                 
-            if 'intensity' in profile:
-                print("* DataType\t: Intensity")
-                print("* Count\t: ", profile['intensity_count'])
+            # if 'intensity' in profile:
+                # print("* DataType\t: Intensity")
+                # print("* Count\t: ", profile['intensity_count'])
             
-            print("First 3 values:")
-            if 'pixels' in profile:
-                for j in range(len(profile['pixels'])):
-                    print('-pixel [', j, ']\t', 'intensity=', profile['pixels'][j])
-            if 'points' in profile:
-                for j in range(10):#len(profile['points'])):
-                        print('-point [', j, ']\t x=', profile['points'][j].x, '\t z=', profile['points'][j].z)
-            if 'intensity' in profile:
-                for j in range(len(profile['intensity'])):
-                    print('-intensity [', j, ']\t', '=', profile['intensity'][j])
-            print("Profile was successfully received: ")
-            print("-----------------------------------------")
-        else:
-            print("Profile was not received!")
-            print("-----------------------------------------")
+            # print("First 3 values:")
+            # if 'pixels' in profile:
+                # for j in range(len(profile['pixels'])):
+                    # print('-pixel [', j, ']\t', 'intensity=', profile['pixels'][j])
+            # if 'points' in profile:
+                # for j in range(10):#len(profile['points'])):
+                        # print('-point [', j, ']\t x=', profile['points'][j].x, '\t z=', profile['points'][j].z)
+            # if 'intensity' in profile:
+                # for j in range(len(profile['intensity'])):
+                    # print('-intensity [', j, ']\t', '=', profile['intensity'][j])
+            # print("Profile was successfully received: ")
+            # print("-----------------------------------------")
+        #else:
+        #    print("Profile was not received!")
+        #    print("-----------------------------------------")
 
         # Disconnect from scanner.
         disconnect(scanner)

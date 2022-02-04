@@ -22,7 +22,7 @@ def send_profile_process(list_in, db_host_address_in, db_in):
         time_rel = line['time_rel']
         for i in range(len(line['line'])):
             if line['line'][i]['z'] != 0.0:
-                list_of_points.append([time_now - datetime.timedelta(microseconds=i), time_rel, line['line'][i]['x'],
+                list_of_points.append([time_now + datetime.timedelta(microseconds=i), time_rel, line['line'][i]['x'],
                                        line['line'][i]['z']])
                 # Microseconds added in order for server to keep all the points (datetime has microsecond resolution)
                 # Without that distinction only the last point would be kept 
@@ -68,10 +68,10 @@ class LASER_scanner_process(mp.Process):
         # Create sender thread
         self.sender = mp.Process(target=self.scanner_data_sender)
         # Just to be sure they exist
-        self.time_now_old = datetime.datetime.utcnow()
-        self.time_rel_old = self.time_now_old.timestamp() - self.start_time
-        self.time_now_new = datetime.datetime.utcnow()
-        self.time_rel_new = self.time_now_new.timestamp() - self.start_time
+        # self.time_now_old = datetime.datetime.utcnow()
+        # self.time_rel_old = self.time_now_old.timestamp() - self.start_time
+        # self.time_now_new = datetime.datetime.utcnow()
+        # self.time_rel_new = self.time_now_new.timestamp() - self.start_time
 
     def __del__(self):  # As I'm using a .so lib for the scanner I want to cleanup properly
         print('LASER: Joining scanner collector process')
@@ -128,51 +128,11 @@ class LASER_scanner_process(mp.Process):
         while not self.events['stop collector'].is_set():
             #print('collector running')
             if self.events['send data'].is_set():
-                # check_dump_lenght
-                #if self.scanner.dump_full(): # If we've collected profiles 
-                #    print('dump_full')
-                #    # get profiles
-                #    list_tmp = self.scanner.get_dump()
-                #    # get time for new profiles
                     time_now = datetime.datetime.utcnow()
-                    time_rel = self.time_now_new.timestamp() - self.start_time
-                    # start recording new profiles
-                #    self.scanner.dump_record_start()
-                    
-                    # prepare acquired profiles for queue
-                #    ind = 0
-                #    for profile in list_tmp:
-                #        list_of_profiles.append({'time_now': self.time_now_old + datetime.timedelta(seconds=ind*(1/self.scanner.scanning_freq)), 
-                #                                'time_rel': self.time_rel_old+ind*(1/self.scanner.scanning_freq), 
-                #                                'line': profile})
-                #        ind=ind+1
-                    # update timing
-                #    self.time_now_old=self.time_now_new
-                #    self.time_rel_old=self.time_rel_new
-                    
-                #else: # check if we are collecting profiles
-                #    if not self.scanner.recording: # start recording
-                #        print('starting_recording')
-                #        self.scanner.dump_record_start()
-                #        self.time_now_old = datetime.datetime.utcnow()
-                #        self.time_rel_old = self.time_now_old.timestamp() - self.start_time
-                #    else: # take a quick nap
-                #        if self.scanner.dump_fill_time>0.02:
-                #            print('taking a nap')
-                #            sleep(0.01)
-                #        else:
-                #            print('no nap for me')
-                        
+                    time_rel = time_now.timestamp() - self.start_time
                     list_of_profiles.append({'time_now': time_now, 'time_rel': time_rel, 'line': self.scanner.get_line()})
-                    print('profile acquired')
-                #except:
-                #    print('error getting data')
-                #rest_time =time_rel + 1/acquisition_freq - (datetime.datetime.utcnow().timestamp()-self.start_time)
-                #print(rest_time)
-                #if rest_time>0:
-                #    sleep(rest_time)
-                #print('data_got')
-            if not self.internal_events['dequeueing'].is_set() and len(list_of_profiles) > 2:
+                    #print('profile acquired')
+            if not self.internal_events['dequeueing'].is_set() and len(list_of_profiles) > 10:
                 #print('putting profiles to queue')
                 self.q.put(list_of_profiles)
                 list_of_profiles = []
