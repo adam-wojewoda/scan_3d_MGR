@@ -3,7 +3,7 @@
 #   1. GUI
 #   2. Calling functions from other target specific libraries
 
-import Database_client
+import Database_collector
 import TCP_socket_server
 import tkinter as tk
 
