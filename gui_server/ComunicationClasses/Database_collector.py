@@ -7,7 +7,6 @@
 from influxdb import DataFrameClient
 
 
-
 class Database_collector:
     def __init__(self, host, port=8086, user='root', password='root'):
         self.client = DataFrameClient(host, port, user, password)
@@ -52,14 +51,28 @@ class Database_collector:
         if timestamp_start is None and timestamp_end is None:
             return self.client.query(
                 'select mean(*) from %(measurement)s GROUP BY time(1ms) fill(linear)' % {
-                    "measurement": measurement_name}, epoch='u',
+                    "measurement": measurement_name}, epoch='ns',
                 database=db_name)[measurement_name]
         elif timestamp_end > timestamp_start:  # This should raise an error when one is none
             return self.client.query(
                 'select mean(*) from %(measurement)s WHERE time >= %(t_s)sms and time <= %(t_e)sms GROUP BY time(1ms) '
                 'fill(linear) '
-                % {"measurement": measurement_name, 't_s':timestamp_start, 't_e': timestamp_end}, epoch='u',
+                % {"measurement": measurement_name, 't_s': timestamp_start, 't_e': timestamp_end}, epoch='ns',
                 database=db_name)[measurement_name]
+        else:
+            raise ValueError('End earlier than start!')
+
+    def get_scanner_data(self, db_name, timestamp_start=None, timestamp_end=None):
+        if timestamp_start is None and timestamp_end is None:
+            return self.client.query(
+                'select * from %(measurement)s' % {
+                    "measurement": 'scanner_raw'}, epoch='ns',
+                database=db_name)['scanner_raw']
+        elif timestamp_end > timestamp_start:  # This should raise an error when one is none
+            return self.client.query(
+                'select * from %(measurement)s WHERE time >= %(t_s)sms and time <= %(t_e)sms '
+                % {"measurement": 'scanner_raw', 't_s': timestamp_start, 't_e': timestamp_end}, epoch='ns',
+                database=db_name)['scanner_raw']
         else:
             raise ValueError('End earlier than start!')
 
@@ -70,6 +83,7 @@ class Database_collector:
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import pandas as pd
+
     print('Testing connection')
     db_host_address = 'localhost'
     print('Server IP: ' + db_host_address)
@@ -84,14 +98,34 @@ if __name__ == '__main__':
 
     print('List of measurements:')
     print(db_client.get_measurements_list('scan_sensor_test'))
-    data = db_client.get_measurement_data('scan_sensor_test', 'MPU_9255_raw', 1643975248642,1643975333534).dropna()
+    data2=db_client.get_scanner_data('scan_sensor_test', 1652530355581, 1652530381703).dropna()
+    data = db_client.get_measurement_data('scan_sensor_test', 'MPU_9255_raw', 1652530355581, 1652530381703).dropna()
+
+
     with pd.option_context('display.max_rows', None, 'display.max_columns', None,
                            'display.precision', 3,
                            ):
-        print(data.describe())
+        print(data2.head())
 
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None,
+                           'display.precision', 3,
+                           ):
+        print(data.head())
+
+    data.set_index('mean_time_rel', inplace=True)
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None,
+                           'display.precision', 3,
+                           ):
+        print(data.head())
+    # data.drop('')
     plt.style.use('dark_background')
+    figure, axis = plt.subplots(1,2)
+    axis[0].plot(data.index, data['mean_acc_X'])
+    axis[0].plot(data.index, data['mean_acc_Y'])
+    axis[0].plot(data.index, data['mean_acc_Z'])
 
-    plt.plot(data['mean_time_rel'], data['mean_acc_Y'])
+    axis[1].plot(data.index, data['mean_gyro_X'])
+    axis[1].plot(data.index, data['mean_gyro_Y'])
+    axis[1].plot(data.index, data['mean_gyro_Z'])
+
     plt.show()
-    print('Lack of testing code')
