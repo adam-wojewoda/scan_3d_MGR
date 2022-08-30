@@ -3,10 +3,8 @@ from __future__ import annotations
 from typing import Dict
 
 from scipy.spatial.transform import Rotation
-from numpy import nan
-
-total_nodes = 0
-total_points = 0
+from scipy.optimize import curve_fit
+from numpy import nan, array, transpose
 
 
 class Voxel:  # Voxel structure
@@ -19,6 +17,53 @@ class Voxel:  # Voxel structure
         self.range: Dict[str, float] = {'x_min': nan, 'x_max': nan,  # <x_min;x_max)
                                         'y_min': nan, 'y_max': nan,  # <y_min;y_max)
                                         'z_min': nan, 'z_max': nan}  # <z_min;z_max)
+
+    @staticmethod
+    def plane_dist_func(in_point, A, B, C):
+        # Ideal plane with such definition would always return zero, however our function will return something else
+        # This something else is the distance between input point and plane
+        denom = 1 / (A ** 2 + B ** 2 + C ** 2) ** 0.5
+        d = (in_point[0, :] * A
+             + in_point[1, :] * B
+             + in_point[2, :] * C
+             + 1) * denom  # <- I keep D constrained, the parameters would be scalable otherwise (no change in output)
+        return d
+
+    def fit_plane(self):
+        # Z = a1 * X + a2 * Y + c <- This format will have problems with vertical surfaces
+        # A(x−x0)+B(y−y0)+C(z−z0)=0 <- This would require me to now single point of surface in advance
+        # Ax+By+Cz+D=0 <- I should start with this form
+        x_dat = []
+
+        for point in self.points:
+            x_dat.append([point.pos_glob_vect['X'], point.pos_glob_vect['Y'], point.pos_glob_vect['Z']])
+
+        # print(len(self.points))
+        popt, pcov = curve_fit(self.plane_dist_func, transpose(array(x_dat)), [0.0] * len(self.points))
+
+        vect_norm_div = 1 / (popt[0] ** 2 + popt[1] ** 2 + popt[2] ** 2) ** 0.5
+        self.mean_plane = {'A': popt[0] * vect_norm_div,
+                           'B': popt[1] * vect_norm_div,
+                           'C': popt[2] * vect_norm_div,
+                           'D': vect_norm_div}  # popt[3]}
+
+    def calc_points_opt_vect(self):
+        if self.mean_plane is None:
+            for v in self.sub_voxels:
+                v.calc_points_opt_vect()
+        else:
+            for p in self.points:
+                p.calculate_plane_point_vector(self.mean_plane)
+
+    def fit_all_planes(self):
+        if not self.points:
+            for v in self.sub_voxels:
+                v.fit_all_planes()
+        else:
+            if len(self.points) >= 5:
+                self.fit_plane()
+            else:
+                self.mean_plane = None
 
     def set_range_from_points(self):
         if self.points:
@@ -55,6 +100,7 @@ class Voxel:  # Voxel structure
             raise RuntimeError('Empty list of points')
 
     def fill_root_voxel(self, measurements_in: list[MeasurementInstance]):
+        self.points = []
         for meas in measurements_in:
             self.points.extend(meas.scanner_points)
 
@@ -165,21 +211,30 @@ class Voxel:  # Voxel structure
                 i = i + 1
 
     def count_nodes(self):
-        global total_nodes
-        total_nodes = total_nodes + 1
-        if self.points:
-            pass
-        else:
+        # global total_nodes
+        # total_nodes = total_nodes + 1
+        nodes_here_and_below = 1
+        if not self.points:
             for v in self.sub_voxels:
-                v.count_nodes()
+                nodes_here_and_below = nodes_here_and_below + v.count_nodes()
+        return nodes_here_and_below
 
     def count_points(self):
-        global total_points
+        # global total_points
+        points_here_and_below = 0
         if self.points:
-            total_points = total_points + len(self.points)
+            points_here_and_below = len(self.points)
         else:
             for v in self.sub_voxels:
-                v.count_points()
+                points_here_and_below = points_here_and_below + v.count_points()
+        return points_here_and_below
+
+    def get_subdivisions(self, level_in):
+        list_of_ranges = [{'level': level_in + 1, 'ranges': self.range.copy()}]
+        if not self.points:
+            for v in self.sub_voxels:
+                list_of_ranges.extend(v.get_subdivisions(level_in + 1))
+        return list_of_ranges
 
 
 class ScannerPoint:  # Single scanner point
@@ -198,6 +253,19 @@ class ScannerPoint:  # Single scanner point
     def calculate_global_vect(self, dev_global_pos):
         self.pos_glob_vect = {k: self.pos_rel_vect.get(k, 0) + dev_global_pos.get(k, 0) for k in
                               set(self.pos_rel_vect) & set(dev_global_pos)}
+
+    def calculate_plane_point_vector(self, plane: Dict):
+        # Ideal plane with such definition would always return zero, however our function will return something else
+        # This something else is the distance between input point and plane times 6^0.5
+        # 1 = (A ** 2 + B ** 2 + C ** 2) ** 0.5 <- input plane should have this normalized
+        d = self.pos_glob_vect['X'] * plane['A'] \
+            + self.pos_glob_vect['Y'] * plane['B'] \
+            + self.pos_glob_vect['Z'] * plane['C'] \
+            + plane['D']
+
+        self.opt_vect['X'] = - plane['A'] * d
+        self.opt_vect['Y'] = - plane['B'] * d
+        self.opt_vect['Z'] = - plane['C'] * d
 
 
 class OptVectorDev:  # Optimization force vector structure
@@ -273,7 +341,8 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
                             'scanner_points': [{'X': 0.0, 'Y': 0.0, 'Z': 0.0}]}]
                             scanner points must be in device frame as it won't change
                             """
-
+        self.total_nodes = 0
+        self.total_points = 0
         # Set things up from raw data
         self.measurements = []  # list of MeasurementInstances
         # Create list of device positions (absolute device coordinates)
@@ -314,6 +383,17 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
         self.root_voxel.fill_root_voxel(self.measurements)
         self.root_voxel.divide_voxel()
 
+    def count_nodes(self):
+        self.total_nodes = self.root_voxel.count_nodes()
+        return self.total_nodes
+
+    def count_points(self):
+        self.total_points = self.root_voxel.count_points()
+        return self.total_points
+
+    def export_voxels_wireframe(self):
+        return self.root_voxel.get_subdivisions(0)
+
     def export_datastructure(self):
         # Make input datastructure back from out classes
         export_ds = []
@@ -335,23 +415,24 @@ if __name__ == '__main__':
     # print(test_data[0])
     device_curve = DeviceCurve(test_data)
     device_curve.voxelize()
-    total_nodes = 0
-    total_points = 0
-    device_curve.root_voxel.count_nodes()
-    device_curve.root_voxel.count_points()
+    total_nodes = device_curve.count_nodes()
+    total_points = device_curve.count_points()
     print('Before')
     print('Nodes: ', total_nodes)
     print('Points: ', total_points)
     device_curve.root_voxel.drop_unneeded_nodes()
-    total_nodes = 0
-    total_points = 0
-    device_curve.root_voxel.count_nodes()
-    device_curve.root_voxel.count_points()
+    total_nodes = device_curve.count_nodes()
+    total_points = device_curve.count_points()
     print('After')
     print('Nodes: ', total_nodes)
     print('Points: ', total_points)
-
     export_data = device_curve.export_datastructure()
-    with open('/media/adamw/DATA/Projekty/Praca_mgr/scan_3d_MGR/gui_server/DataAnalysisClasses/test2.json',
-              'w') as fout:
-        json.dump(export_data, fout)
+    print('filling surfaces')
+    device_curve.root_voxel.fit_all_planes()
+    print('writing opt_vect')
+    device_curve.root_voxel.calc_points_opt_vect()
+    print('exporting ranges')
+    wire = device_curve.export_voxels_wireframe()
+    # with open('/media/adamw/DATA/Projekty/Praca_mgr/scan_3d_MGR/gui_server/DataAnalysisClasses/test2.json',
+    #           'w') as fout:
+    #     json.dump(export_data, fout)
