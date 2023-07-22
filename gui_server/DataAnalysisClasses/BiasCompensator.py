@@ -57,9 +57,9 @@ class BiasCompensator:
         # self.bias_linear['b_z_gyro'] = self.bias_const['z_gyro']
 
     def set_gyro_const_bias(self, n_rows, df_in):
-        self.bias_const['x_gyro'] = -df_in.iloc[:n_rows]['mean_gyro_X'].mean()
-        self.bias_const['y_gyro'] = -df_in.iloc[:n_rows]['mean_gyro_Y'].mean()
-        self.bias_const['z_gyro'] = -df_in.iloc[:n_rows]['mean_gyro_Z'].mean()
+        self.bias_const['x_gyro'] = -df_in.iloc[:n_rows]['gyro_X'].mean()
+        self.bias_const['y_gyro'] = -df_in.iloc[:n_rows]['gyro_Y'].mean()
+        self.bias_const['z_gyro'] = -df_in.iloc[:n_rows]['gyro_Z'].mean()
 
     #    self.bias_linear['b_x_gyro'] = self.bias_const['x_gyro']
     #    self.bias_linear['b_y_gyro'] = self.bias_const['y_gyro']
@@ -91,12 +91,12 @@ class BiasCompensator:
 
     def apply_bias_basic_vect(self, df_in):
         df_out = df_in.copy()
-        df_out['mean_acc_X_b'] = df_in['mean_acc_X'] + self.bias_const['x_acc']
-        df_out['mean_acc_Y_b'] = df_in['mean_acc_Y'] + self.bias_const['y_acc']
-        df_out['mean_acc_Z_b'] = df_in['mean_acc_Z'] + self.bias_const['z_acc']
-        df_out['mean_gyro_X_b'] = df_in['mean_gyro_X'] + self.bias_const['x_gyro']
-        df_out['mean_gyro_Y_b'] = df_in['mean_gyro_Y'] + self.bias_const['y_gyro']
-        df_out['mean_gyro_Z_b'] = df_in['mean_gyro_Z'] + self.bias_const['z_gyro']
+        df_out['acc_X_b'] = df_in['acc_X'] + self.bias_const['x_acc']
+        df_out['acc_Y_b'] = df_in['acc_Y'] + self.bias_const['y_acc']
+        df_out['acc_Z_b'] = df_in['acc_Z'] + self.bias_const['z_acc']
+        df_out['gyro_X_b'] = df_in['gyro_X'] + self.bias_const['x_gyro']
+        df_out['gyro_Y_b'] = df_in['gyro_Y'] + self.bias_const['y_gyro']
+        df_out['gyro_Z_b'] = df_in['gyro_Z'] + self.bias_const['z_gyro']
         return df_out
         # return df_in.apply(add_const_bias, axis=1)
 
@@ -121,10 +121,10 @@ class BiasCompensator:
 
     def apply_bias_linear_vect(self, df_in):
         df_out = df_in.copy()
-        df_out['mean_acc_X_b'] = df_in['mean_acc_X'] * self.bias_linear['a_x_acc'] + self.bias_linear['b_x_acc']
-        df_out['mean_acc_Y_b'] = df_in['mean_acc_Y'] * self.bias_linear['a_y_acc'] + self.bias_linear['b_y_acc']
-        df_out['mean_acc_Z_b'] = df_in['mean_acc_Z'] * self.bias_linear['a_z_acc'] + self.bias_linear['b_z_acc']
-        df_out['mean_gyro_X_b'] = df_in['mean_gyro_X'] + self.bias_const['x_gyro']
-        df_out['mean_gyro_Y_b'] = df_in['mean_gyro_Y'] + self.bias_const['y_gyro']
-        df_out['mean_gyro_Z_b'] = df_in['mean_gyro_Z'] + self.bias_const['z_gyro']
+        df_out['acc_X_b'] = df_in['acc_X'] * self.bias_linear['a_x_acc'] + self.bias_linear['b_x_acc']
+        df_out['acc_Y_b'] = df_in['acc_Y'] * self.bias_linear['a_y_acc'] + self.bias_linear['b_y_acc']
+        df_out['acc_Z_b'] = df_in['acc_Z'] * self.bias_linear['a_z_acc'] + self.bias_linear['b_z_acc']
+        df_out['gyro_X_b'] = df_in['gyro_X'] + self.bias_const['x_gyro']
+        df_out['gyro_Y_b'] = df_in['gyro_Y'] + self.bias_const['y_gyro']
+        df_out['gyro_Z_b'] = df_in['gyro_Z'] + self.bias_const['z_gyro']
         return df_out

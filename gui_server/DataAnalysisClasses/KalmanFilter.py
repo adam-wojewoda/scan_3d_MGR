@@ -8,9 +8,9 @@ class KalmanFilter:
     def __init__(self, g_in=9.8159):
         # Initialise matrices and variables
         self.C = array([[1, 0, 0, 0], [0, 0, 1, 0]])
-        self.P = eye(4)  # Estimate covariance
-        self.Q = eye(4)  # Model covariance
-        self.R = eye(2)  # Measurement covariance
+        self.P = eye(4) * 1e-8  # Estimate initial covariance (properly set in "set_state")
+        self.Q = eye(4) * 6e-4  # How bad is model data
+        self.R = eye(2) * 2e-3  # How bad is sensor data (changed in function of acceleration)
 
         self.state_estimate = array([[0], [0], [0], [0]])
         self.g = g_in
@@ -24,7 +24,9 @@ class KalmanFilter:
         self.theta_offset = 0.0
         self.dt = 0.001
 
-    def iteration(self, row, extra=False,acc_names=['mean_acc_X_t','mean_acc_Y_t','mean_acc_Z_t']):
+    def iteration(self, row, extra=False, acc_names=None):
+        if acc_names is None:
+            acc_names = ['acc_X_t', 'acc_Y_t', 'acc_Z_t']
         [phi_acc, theta_acc] = [row['acc_phi'], row['acc_theta']]
         phi_acc -= self.phi_offset
         theta_acc -= self.theta_offset
@@ -32,15 +34,15 @@ class KalmanFilter:
         g_now = sqrt(row[acc_names[0]] ** 2.0 + row[acc_names[1]] ** 2.0 + row[acc_names[2]] ** 2.0)
 
         # Calculate and apply new measurement covariance
-        if abs(g_now - self.g) < 0.1:
-            self.R = eye(2) * 50000000
+        if abs(g_now - self.g) < 0.001:
+            self.R = eye(2) * 4e-3
         else:
-        #    self.R = eye(2) * 10000000000
-            self.R = eye(2) * (50000000 + ((g_now - self.g) ** 2) * 1000000000)
+            #    self.R = eye(2) * 10000000000
+            self.R = eye(2) * (4e-3 * (1 + (g_now - self.g) ** 2 * 100))
         # Get gyro measurements and calculate Euler angle derivatives
-        [p, q, r] = [row['mean_gyro_X_b'] * pi / 180,
-                     row['mean_gyro_Y_b'] * pi / 180,
-                     row['mean_gyro_Z_b'] * pi / 180]
+        [p, q, r] = [row['gyro_X_b'] * pi / 180,
+                     row['gyro_Y_b'] * pi / 180,
+                     row['gyro_Z_b'] * pi / 180]
         phi_dot = p + sin(self.phi_hat) * tan(self.theta_hat) * q + cos(self.phi_hat) * tan(
             self.theta_hat) * r
         theta_dot = cos(self.phi_hat) * q - sin(self.phi_hat) * r
@@ -82,7 +84,9 @@ class KalmanFilter:
 
         return row
 
-    def apply_kalman(self, df_in, extra=False,acc_names=['mean_acc_X_t','mean_acc_Y_t','mean_acc_Z_t']):
+    def apply_kalman(self, df_in, extra=False, acc_names=None):
+        if acc_names is None:
+            acc_names = ['acc_X_t', 'acc_Y_t', 'acc_Z_t']
         df_in['phi_hat'] = nan
         df_in['psi_hat'] = nan
         df_in['theta_hat'] = nan
@@ -97,9 +101,9 @@ class KalmanFilter:
             df_in['int_phi'] = nan
 
         self.C = array([[1, 0, 0, 0], [0, 0, 1, 0]])
-        self.P = eye(4) * 10000  # Estimate initial covariance
-        self.Q = eye(4) * 0.1  # How bad is model data
-        self.R = eye(2) * 1000000  # How bad is sensor data
+        self.P = eye(4) * 1e-8  # Estimate initial covariance (properly set in "set_state")
+        self.Q = eye(4) * 6e-4  # How bad is model data
+        self.R = eye(2) * 2e-3  # How bad is sensor data (changed in function of acceleration)
         # Initial estimates
         # self.state_estimate = array([[20 * 3.14 / 180], [0], [20 * 3.14 / 180], [0]])
         self.state_estimate = array([[0], [0], [0], [0]])
@@ -112,3 +116,6 @@ class KalmanFilter:
         self.dt = 0.001
 
         return df_in.apply(lambda row: self.iteration(row, extra=extra, acc_names=acc_names), axis=1)
+
+
+

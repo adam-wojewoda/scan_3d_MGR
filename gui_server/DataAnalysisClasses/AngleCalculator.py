@@ -6,7 +6,7 @@ class AngleCalculator:
     """Class holds all the functions considering getting angles from acc data"""
 
     @staticmethod
-    def rotate_acceleration_row(row, acc_names=['mean_acc_X_t', 'mean_acc_Y_t', 'mean_acc_Z_t']):
+    def rotate_acceleration_row(row, acc_names=['acc_X_t', 'acc_Y_t', 'acc_Z_t']):
         # df_in['phi_hat'] = np.nan
         # df_in['psi_hat'] = np.nan
         # df_in['theta_hat'] = np.nan
@@ -38,30 +38,31 @@ class AngleCalculator:
         df_in['acc_Y_e'] = nan
         df_in['acc_Z_e'] = nan
         df_in['g_ground'] = nan
-        df_in.apply(lambda row: self.rotate_acceleration_row(row), axis=1)
-        return df_in
+        return df_in.apply(lambda row: self.rotate_acceleration_row(row), axis=1)
 
     def rotate_vect(self, df_in):
         vect_names = ['X', 'Y', 'Z']
         df_tmp=df_in.copy()
-        print('df_copied')
+        # print('df_copied')
         df_tmp[vect_names[0] + '_e'] = nan
         df_tmp[vect_names[1] + '_e'] = nan
         df_tmp[vect_names[2] + '_e'] = nan
         #df_in['g_ground'] = nan
-        df_tmp.apply(lambda row: self.rotate_vect_row(row), axis=1)
+        df_tmp = df_tmp.apply(lambda row: self.rotate_vect_row(row), axis=1)
         return df_tmp[[vect_names[0] + '_e',vect_names[1] + '_e',vect_names[2] + '_e']]
 
     @staticmethod
-    def get_acc_angles(row, acc_names=['mean_acc_X_t', 'mean_acc_Y_t', 'mean_acc_Z_t']):
+    def get_acc_angles(row, acc_names=['acc_X_t', 'acc_Y_t', 'acc_Z_t']):
+        # print(row[acc_names[0]],' ',row[acc_names[1]], ' ',row[acc_names[2]])
         row['acc_phi'] = atan2(row[acc_names[1]],
                                sqrt(row[acc_names[0]] ** 2.0 + row[acc_names[2]] ** 2.0))
+        # print(row['acc_phi'])
         row['acc_theta'] = atan2(-row[acc_names[0]],
-                                 sqrt(row[acc_names[1]] ** 2.0 + row[[acc_names[2]]] ** 2.0))
+                                 sqrt(row[acc_names[1]] ** 2.0 + row[acc_names[2]] ** 2.0))
+        # print(row['acc_theta'])
         return row
 
     def calculate_angles_1(self, df_in):
         df_in['acc_phi'] = nan
         df_in['acc_theta'] = nan
-        df_in.apply(lambda row: self.get_acc_angles(row), axis=1)
-        return df_in
+        return df_in.apply(lambda row: self.get_acc_angles(row), axis=1)
