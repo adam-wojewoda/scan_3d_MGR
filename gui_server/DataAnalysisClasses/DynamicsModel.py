@@ -24,10 +24,10 @@ class KalmanFilter:
         self.dt = dt
 
     def set_state(self, init_cov=1e-8,
-                  init_phi_hat=0.0, init_theta_hat=0.0, init_psi_hat=0.0):
-        self.state_estimate[0] = init_phi_hat
-        self.state_estimate[2] = init_theta_hat
-        self.psi_hat = init_psi_hat
+                  init_phi_hat=0.0, init_theta_hat=0.0, init_psi_hat=0.0, degrees_in=True):
+        self.state_estimate[0] = init_phi_hat * pi / 180 if degrees_in else init_phi_hat
+        self.state_estimate[2] = init_theta_hat * pi / 180 if degrees_in else init_theta_hat
+        self.psi_hat = init_psi_hat * pi / 180 if degrees_in else init_psi_hat
         # self.int_theta = init_theta
         # self.int_phi = init_phi
         # self.int_psi = init_psi
@@ -108,7 +108,7 @@ class LinearIntegrator:
             rot = Rotation.from_euler('ZYX', [euler_temp['psi'], euler_temp['theta'], euler_temp['phi']],
                                       degrees=True)
             rot_vect = rot.as_rotvec()
-            initial_state = {'mean_time_rel': 0.0,
+            initial_state = {'time_rel': 0.0,
                              'dev_pos': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
                              'dev_speed': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
                              'dev_rot_vect': rot_vect,
@@ -119,25 +119,26 @@ class LinearIntegrator:
         self.g = g_in
         self.end_state = None
 
-    def set_state(self, state_input=None):
+    def set_state(self, state_input=None, degrees_in = True):
         if state_input is None:
             raise ValueError('No initial state given!')
         if type(state_input) == dict:
-            if state_input['mean_time_rel'] is not None:
-                self.initial_state['mean_time_rel'] = state_input['mean_time_rel']
+            if state_input['time_rel'] is not None:
+                self.initial_state['time_rel'] = state_input['time_rel']
             if state_input['dev_pos'] is not None:
                 self.initial_state['dev_pos'] = deepcopy(state_input['dev_pos'])
             if state_input['dev_speed'] is not None:
                 self.initial_state['dev_speed'] = deepcopy(state_input['dev_speed'])
             if state_input['dev_euler_ang'] is not None:
-                self.initial_state['dev_euler_ang'] = deepcopy(state_input['dev_euler_ang'])
+                # self.initial_state['dev_euler_ang'] = deepcopy(state_input['dev_euler_ang'])
                 # create rot_vect
                 rot = Rotation.from_euler('ZYX',
                                           [self.initial_state['dev_euler_ang']['psi'],
                                            self.initial_state['dev_euler_ang']['theta'],
                                            self.initial_state['dev_euler_ang']['phi']],
-                                          degrees=True)
+                                          degrees=degrees_in)
                 self.initial_state['dev_rot_vect'] = rot.as_rotvec()
+                self.initial_state['dev_euler_ang'] = rot.as_euler('ZYX', degrees=True)
             else:
                 if state_input['dev_rot_vect'] is not None:
                     self.initial_state['dev_rot_vect'] = deepcopy(state_input['dev_rot_vect'])
@@ -150,6 +151,7 @@ class LinearIntegrator:
     def integrate(self, input_list: list = None, initial_state: dict = None, degrees=True, auto_iterate=True):
         """
 
+        @param auto_iterate: after calculating new state write it as initial (for purpose of iteration)
         @param degrees: True - degrees, False - radians
         @param input_list: [{'mean_time_rel': 0.0,
                              'X_acc': 0.0, 'Y_acc': 0.0, 'Z_acc': 0.0,
@@ -189,7 +191,7 @@ class LinearIntegrator:
         temp_state['dev_euler_ang'] = {'psi': input_list[-1]['psi'],
                                        'theta': input_list[-1]['theta'],
                                        'phi': input_list[-1]['phi']}
-        temp_state['mean_time_rel'] = input_list[-1]['mean_time_rel']
+        temp_state['time_rel'] = input_list[-1]['time_rel']
 
         self.end_state = temp_state
         if auto_iterate:
@@ -212,9 +214,10 @@ class DynamicsModel:
         imu_input = self.kalman.apply_kalman(imu_in_list=imu_input)
         return self.integrator.integrate(input_list=imu_input, initial_state=prev_state, degrees=True)
 
-    def write_state(self, state_in=None, zero_point=False):
+    def write_state(self, state_in=None, zero_point=False, degrees_in=True):
         """
         Set Kalman State with covariance reinitialisation
+        @param degrees_in: are input angles in degrees
         @param zero_point: Determines initial covariance applied
         @param state_in: {'mean_time_rel': 0.0,
                         'dev_pos': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
@@ -223,7 +226,7 @@ class DynamicsModel:
                         'dev_euler_ang': {'psi': 0.0, 'theta': 0.0, 'phi': 0.0}
                         }"""
         if state_in is None:
-            state_in = {'mean_time_rel': None,
+            state_in = {'time_rel': None,
                         'dev_pos': None,
                         'dev_speed': None,
                         'dev_rot_vect': None,
@@ -233,6 +236,7 @@ class DynamicsModel:
         self.kalman.set_state(init_cov=0 if zero_point else None,
                               init_phi_hat=state_in['dev_euler_ang']['phi'],
                               init_theta_hat=state_in['dev_euler_ang']['theta'],
-                              init_psi_hat=state_in['dev_euler_ang']['psi'])
+                              init_psi_hat=state_in['dev_euler_ang']['psi'],
+                              degrees_in=degrees_in)
 
-        self.integrator.set_state(state_input=state_in)
+        self.integrator.set_state(state_input=state_in, degrees_in=degrees_in)

@@ -8,6 +8,7 @@ from numpy import nan, array, transpose, cross
 from .DynamicsModel import DynamicsModel
 from copy import deepcopy
 from dataclasses import dataclass, field
+from random import sample
 
 
 class Voxel:  # Voxel structure
@@ -130,7 +131,7 @@ class Voxel:  # Voxel structure
                                   'C': c,
                                   'D': d[0]}
 
-                if self.plane_in_voxel(plane_definition=mean_plane_tmp):
+                if nan not in mean_plane_tmp.values() and self.plane_in_voxel(plane_definition=mean_plane_tmp):
                     self.mean_plane = mean_plane_tmp
 
                 else:
@@ -140,13 +141,25 @@ class Voxel:  # Voxel structure
                 print('Failed to create plane: ', e)
                 self.mean_plane = None  # popt[3]}
 
-    def calc_points_opt_vect(self):
+    def calc_points_opt_vect(self, attraction_coefficient: float):
         if self.mean_plane is None:
             for v in self.sub_voxels:
-                v.calc_points_opt_vect()
+                v.calc_points_opt_vect(attraction_coefficient=attraction_coefficient)
         else:
+            if attraction_coefficient is not None and attraction_coefficient != 0.0 and len(self.points) > 0:
+                mass_center = {'X': 0.0, 'Y': 0.0, 'Z': 0.0}
+                for p in self.points:
+                    mass_center['X'] += p.pos_glob_vect['X']
+                    mass_center['Y'] += p.pos_glob_vect['Y']
+                    mass_center['Z'] += p.pos_glob_vect['Z']
+                mass_center['X'] = mass_center['X'] / len(self.points)
+                mass_center['Y'] = mass_center['Y'] / len(self.points)
+                mass_center['Z'] = mass_center['Z'] / len(self.points)
+            else:
+                mass_center = None
+
             for p in self.points:
-                p.calculate_plane_point_vector(self.mean_plane)
+                p.calculate_plane_point_vector(self.mean_plane, attraction_coefficient, mass_center)
 
     def check_plane_needed(self):
         self.plane_needed = False
@@ -205,11 +218,21 @@ class Voxel:  # Voxel structure
         else:
             raise RuntimeError('Empty list of points')
 
-    def fill_root_voxel(self, measurements_in: list[MeasurementInstance]):
+    def fill_root_voxel(self, measurements_in: list[MeasurementInstance], sample_in: float = 1.0, points_use=None):
         self.points = []
+        if points_use is not None:
+            # get total points number
+            tmp = 0
+            for meas in measurements_in:
+                for point in meas.scanner_points:  # <--- add points sampling
+                    if point.conf.pos_abs_actual:
+                        tmp += 1
+            sample_in = min(1.0, points_use / tmp)
+
         for meas in measurements_in:
             # if meas.config['scanner_points_abs_glob_actual']:
-            for point in meas.scanner_points:
+            for point in sample(meas.scanner_points,
+                                int(len(meas.scanner_points) * sample_in)):  # <--- add points sampling
                 if point.conf.pos_abs_actual:
                     self.points.append(point)
 
@@ -217,8 +240,8 @@ class Voxel:  # Voxel structure
         for meas in measurements_in:
             len_tot += len(meas.scanner_points)
 
-        print('Points to Voxelize: ', len(self.points))
-        print('Total points: ', len_tot)
+        # print('Points to Voxelize: ', len(self.points))
+        # print('Total points: ', len_tot)
         self.set_range_from_points()
 
     def divide_voxel(self):
@@ -234,7 +257,7 @@ class Voxel:  # Voxel structure
 
         d_max = max(dx, dy, dz)
 
-        if d_max > self.minimal_voxel_dimension and len(self.points) > self.minimal_points_number:
+        if d_max > self.minimal_voxel_dimension or len(self.points) > self.minimal_points_number:
             range_tmp_1 = self.range.copy()
             range_tmp_2 = self.range.copy()
             # border = nan
@@ -482,11 +505,11 @@ class ScannerPoint:  # Single scanner point
         self.conf.pos_abs_actual = True
         self.conf.opt_vect_actual = False  # Redundant operation
 
-    def calculate_plane_point_vector(self, plane: Dict):
+    def calculate_plane_point_vector(self, plane: Dict, attraction_coefficient: float, mass_center: dict):
         # Ideal plane with such definition would always return zero, however our function will return something else
         # This something else is the distance between input point and plane times 6^0.5
         # 1 = (A ** 2 + B ** 2 + C ** 2) ** 0.5 <- input plane should have this normalized
-        if None not in plane.values():
+        if plane is not None and None not in plane.values():
             d = self.pos_glob_vect['X'] * plane['A'] \
                 + self.pos_glob_vect['Y'] * plane['B'] \
                 + self.pos_glob_vect['Z'] * plane['C'] \
@@ -495,10 +518,20 @@ class ScannerPoint:  # Single scanner point
             self.opt_vect['X'] = - plane['A'] * d
             self.opt_vect['Y'] = - plane['B'] * d
             self.opt_vect['Z'] = - plane['C'] * d
+
+            if mass_center is not None and (attraction_coefficient is not None and attraction_coefficient != 0.0):
+                # Attraction force is directed to mass center of equally weighted points
+                # Due to the way plane position is calculated it should lay on it therefore
+                # resultant force perpendicular to plane will be equal to zero
+                # Forces are proportional to distance from mass center
+                self.opt_vect['X'] += (mass_center['X'] - self.pos_glob_vect['X']) * attraction_coefficient
+                self.opt_vect['Y'] += (mass_center['Y'] - self.pos_glob_vect['Y']) * attraction_coefficient
+                self.opt_vect['Z'] += (mass_center['Z'] - self.pos_glob_vect['Z']) * attraction_coefficient
+
         else:
-            self.opt_vect['X'] = nan
-            self.opt_vect['Y'] = nan
-            self.opt_vect['Z'] = nan
+            self.opt_vect['X'] = 0.0
+            self.opt_vect['Y'] = 0.0
+            self.opt_vect['Z'] = 0.0
         self.conf.opt_vect_actual = True
 
     # def calc_size_opt_vect(self, cube_ranges: Dict[str:float]):
@@ -588,6 +621,7 @@ class DevicePosition:  # Everything regarding device position in space + optimiz
         self.time_delta = self.mean_time_rel - previous_pos.mean_time_rel
         self.pos_delta = {k: self.pos_abs.get(k, 0) - previous_pos.pos_abs.get(k, 0) for k in
                           set(self.pos_abs) & set(previous_pos.pos_abs)}
+        self.speed_abs = {k: self.pos_delta.get(k, 0) / self.time_delta for k in self.pos_delta}
         # calculate relative rotation from last point
         # q_curr = q_delta * q_last
         # q_curr * q_last^-1 = q_delta
@@ -597,6 +631,7 @@ class DevicePosition:  # Everything regarding device position in space + optimiz
     def set_position_global(self, previous_pos: DevicePosition):
         self.pos_abs = {k: self.pos_delta.get(k, 0) + previous_pos.pos_abs.get(k, 0) for k in
                         set(self.pos_delta) & set(previous_pos.pos_abs)}
+        self.speed_abs = {k: self.pos_delta.get(k, 0) / self.time_delta for k in self.pos_delta}
         self.rot_abs = self.rot_delta * previous_pos.rot_abs
         self.conf.pos_abs_actual = True
         self.conf.opt_loc_actual = False
@@ -631,14 +666,14 @@ class DevicePosition:  # Everything regarding device position in space + optimiz
     def get_state(self):
         rot_vect = self.rot_abs.as_rotvec()
 
-        return {'mean_time_rel': self.mean_time_rel,
+        return {'time_rel': self.mean_time_rel,
                 'dev_pos': self.pos_abs,
                 'dev_speed': self.speed_abs,
                 'dev_rot_vect': {'X': rot_vect[0], 'Y': rot_vect[1], 'Z': rot_vect[2]},
                 'dev_euler_ang': self.euler_ang}
 
     def set_state(self, state_in):
-        self.mean_time_rel = state_in['mean_time_rel']
+        self.mean_time_rel = state_in['time_rel']
         self.pos_abs = deepcopy(state_in['dev_pos'])
         self.speed_abs = deepcopy(state_in['dev_speed'])
         self.rot_abs = Rotation.from_rotvec([state_in['dev_rot_vect']['X'],
@@ -678,7 +713,7 @@ class MeasurementInstance:  # Single line of scanner measurements along informat
                         input_position['dev_speed'] is None) or (
                         input_position['dev_euler_ang'] is None)):
             raise ValueError('Device positions and speed needed when not using dynamic model!')
-        if input_position['mean_time_rel'] is None:
+        if input_position['time_rel'] is None:
             raise ValueError('Measurement time not specified!')
         if dynamic_model_use and (input_position['imu_input'] is None):
             raise ValueError('IMU data needed for use with dynamic model!')
@@ -697,7 +732,7 @@ class MeasurementInstance:  # Single line of scanner measurements along informat
         #                'optimize_pos': False,  # Do we change the position through optimization
         #                'dev_pos_from_optimization': False}  # Does the dev pos come from optimization or Kalman
 
-        self.position = DevicePosition(mean_time_rel=input_position['mean_time_rel'],
+        self.position = DevicePosition(mean_time_rel=input_position['time_rel'],
                                        dev_pos=input_position['dev_pos'],
                                        dev_speed=input_position['dev_speed'],
                                        dev_rot_vect=input_position['dev_rot_vect'],
@@ -846,7 +881,7 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
             self.indexes.kalman_index_init = -1
             if self.dynamics_model is not None:
                 self.dynamics_model.write_state(state_in={
-                    'mean_time_rel': 0.0,
+                    'time_rel': 0.0,
                     'dev_pos': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
                     'dev_speed': {'X': 0.0, 'Y': 0.0, 'Z': 0.0},
                     'dev_rot_vect': None,
@@ -859,9 +894,12 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
             if self.indexes.last_opt_pos_index > self.indexes.kalman_index_init:
                 # Initialize in new point
                 if self.dynamics_model is not None:
+                    # print('Reinitialization')
+                    # print(self.dynamics_model.integrator.initial_state)
                     self.dynamics_model.write_state(
                         state_in=self.measurements[self.indexes.last_opt_pos_index].position.get_state(),
                         zero_point=False)
+                    # print(self.dynamics_model.integrator.initial_state)
                     self.indexes.kalman_index_now = self.indexes.last_opt_pos_index
                     self.indexes.kalman_index_init = self.indexes.last_opt_pos_index
             else:
@@ -880,19 +918,29 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
             # Starting with Kalman index and running till en number of new points is met
             points_to_go = min(num + self.indexes.last_filled_pos_index - self.indexes.kalman_index_init,
                                len(self.measurements) - (self.indexes.kalman_index_now + 1))
-
+            self.indexes.kalman_index_now = self.indexes.kalman_index_init
         else:
             points_to_go = min(num - 1 - self.indexes.kalman_index_init,
                                len(self.measurements) - (self.indexes.kalman_index_now + 1))
 
         points_to_go = max(0, points_to_go)
+        for meas in self.measurements[self.indexes.kalman_index_init + 1:]:
+            meas.conf.optimize_pos = False
+            # self.measurements[self.kalman_index_now].config['opt_vect_actual'] = False
+            meas.conf.dev_pos_from_opt = False
+            meas.conf.available = False
         for i in range(points_to_go):
             # here we call dynamic model and put its data into device position
             # 1. run kalman on data from measurement
+            # print('Calculation')
+            # print(self.dynamics_model.integrator.initial_state)
             out = self.dynamics_model.kalman.apply_kalman(self.measurements[self.indexes.kalman_index_now + 1].imu_data)
+            # print(self.dynamics_model.integrator.initial_state)
             self.indexes.kalman_index_now += 1
             # 2. integrate position
             pos = self.dynamics_model.integrator.integrate(input_list=out)
+            # print('Output position')
+            # print(pos)
             # 3. put new position into device position
             self.measurements[
                 self.indexes.kalman_index_now].set_position_state(pos=pos, optimize=True)
@@ -917,8 +965,8 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
     #     for meas in self.measurements:
     #         meas.apply_maximal_position_change(specific_speed=max_speed)
 
-    def calc_points_opt_vect(self):
-        self.root_voxel.calc_points_opt_vect()
+    def calc_points_opt_vect(self, attraction_coefficient):
+        self.root_voxel.calc_points_opt_vect(attraction_coefficient=attraction_coefficient)
         # self.opt_vect_point_actual = True
         # self.opt_vect_dev_actual = False
         # self.opt_forces_actual = False
@@ -1002,6 +1050,7 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
 
         if max_move is None:
             move_restrict = 1
+            max_move_sq = 0.0
         else:
             # iterate over table to find maximal movement of point
             tmp = {}
@@ -1031,10 +1080,12 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
                             max_move_sq = max_tmp
             else:
                 raise ValueError('Unknown mode')
-
-            move_restrict = min(max_move / (max_move_sq ** 0.5), 1.0)
-            print('Max move old: ', max_move_sq ** 0.5)
-            print('Move scaling: ', move_restrict)
+            if max_move_sq > 0.0:
+                move_restrict = min(max_move / (max_move_sq ** 0.5), 1.0)
+            else:
+                move_restrict = 1.0
+            # print('Max move old: ', max_move_sq ** 0.5)
+            # print('Move scaling: ', move_restrict)
         if mode == 'time':
             for meas in self.measurements[1:]:
                 if meas.conf.available and meas.conf.optimize_pos:
@@ -1057,6 +1108,7 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
                         [meas.position.opt_vect.ang_glob_vect['X'] * elast_rot_2,
                          meas.position.opt_vect.ang_glob_vect['Y'] * elast_rot_2,
                          meas.position.opt_vect.ang_glob_vect['Z'] * elast_rot_2]) * meas.position.rot_delta
+        return max_move_sq ** 0.5, move_restrict * (max_move_sq ** 0.5)
 
     def update_glob_opt(self, rot=False, update_loc=False, max_speed=None, elasticity=None):
         # self.opt_forces_actual = True
@@ -1215,13 +1267,24 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
             meas.position.conf.opt_loc_actual = False
             meas.position.conf.opt_force_actual = False
 
-    def voxelize(self, min_points, min_dimension):
+    def voxelize(self, min_points, min_dimension, sample_in: float = 1.0, points_use=None):
+        if sample_in is not None:
+            if sample_in > 1.0:
+                print('You cant choose more points than You have\nChanging to 1.0')
+            if sample_in < 0.001:
+                print('You cant choose less than 0.1% of points\nChanging to 0.001')
+            sample_in = min(1.0, max(sample_in, 0.001))  # Use at least 0.1% of points
+
         # self.opt_vect_dev_actual = False
         # self.opt_vect_point_actual = False
         # self.opt_forces_actual = False
+        # print('A')
         self.root_voxel = Voxel(min_points, min_dimension)
-        self.root_voxel.fill_root_voxel(self.measurements)
+        # print('B')
+        self.root_voxel.fill_root_voxel(self.measurements, sample_in=sample_in, points_use=points_use)
+        # print('C')
         self.root_voxel.divide_voxel()
+        # print('D')
         for meas in self.measurements:
             if meas.conf.available:
                 meas.position.conf.opt_force_actual = False
@@ -1246,7 +1309,7 @@ class DeviceCurve:  # Single instance of scanner use from start to finish
         for meas in self.measurements:
             if meas.conf.available or get_all:
                 rot_abs = meas.position.rot_abs.as_rotvec()
-                export_ds.append({'mean_time_rel': meas.position.mean_time_rel,
+                export_ds.append({'time_rel': meas.position.mean_time_rel,
                                   'dev_pos': meas.position.pos_abs,
                                   'dev_rot_vect': {'X': rot_abs[0], 'Y': rot_abs[1], 'Z': rot_abs[2]},
                                   'scanner_points': [x.pos_dev_vect for x in meas.scanner_points]})

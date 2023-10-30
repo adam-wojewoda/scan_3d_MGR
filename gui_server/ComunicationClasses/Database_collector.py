@@ -1,6 +1,6 @@
 # Code for communication with InfluxDb database
 # This code takes care of:
-#   1. Creating measurements, databases inside of InfluxDb
+#   1. Creating measurements, databases inside InfluxDb
 #   2. Checking existence of database and connection
 #   3. Sending measurements to DB
 
